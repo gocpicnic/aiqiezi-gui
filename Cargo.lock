@@ -207,6 +207,7 @@ dependencies = [
 [[package]]
 name = "aiqiezi-client"
 version = "0.1.0"
+source = "git+https://github.com/gocpicnic/aiqiezi-cli?rev=477c06c9f5041f381d42b81f9ac0deccea890a72#477c06c9f5041f381d42b81f9ac0deccea890a72"
 dependencies = [
  "aiqiezi-proto",
  "anyhow",
@@ -236,6 +237,7 @@ dependencies = [
 [[package]]
 name = "aiqiezi-proto"
 version = "0.1.0"
+source = "git+https://github.com/gocpicnic/aiqiezi-server?rev=4640cdda083f8ddc12010763050a461b3360c093#4640cdda083f8ddc12010763050a461b3360c093"
 dependencies = [
  "serde",
  "serde_json",

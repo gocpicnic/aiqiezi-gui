@@ -8,7 +8,7 @@ repository = "https://github.com/gocpicnic/aiqiezi-gui"
 build = "build.rs"
 
 [dependencies]
-aiqiezi-client = { path = "../aiqiezi-cli/crates/aiqiezi-client" }
+aiqiezi-client = { git = "https://github.com/gocpicnic/aiqiezi-cli", rev = "477c06c9f5041f381d42b81f9ac0deccea890a72" }
 anyhow = "1"
 eframe = { version = "0.37", features = ["wgpu"] }
 serde_json = "1"

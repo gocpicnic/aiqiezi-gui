@@ -95,20 +95,14 @@ cargo clippy --all-targets -- -D warnings
 cargo run
 ```
 
-The GUI depends on the shared client library by local path:
+The GUI depends on the shared client library through a pinned Git dependency:
 
 ```toml
-aiqiezi-client = { path = "../aiqiezi-cli/crates/aiqiezi-client" }
+aiqiezi-client = { git = "https://github.com/gocpicnic/aiqiezi-cli", rev = "477c06c9f5041f381d42b81f9ac0deccea890a72" }
 ```
 
-Expected sibling layout:
-
-```text
-aiqiezi-v0/
-├── aiqiezi-server/
-├── aiqiezi-cli/
-└── aiqiezi-gui/
-```
+Update the pinned revision when the shared client library changes. No local
+checkout of the CLI repository is required.
 
 The GUI is built from source; no installers or signing are provided.
 
@@ -173,5 +167,7 @@ key and the iroh connection.
 - [AGENTS.md](AGENTS.md): implementation rules for AI coding agents
 - [docs/video-playback.md](docs/video-playback.md): playback architecture and
   decoder backend trade-offs
-- `../aiqiezi-server/README.md`: system architecture
-- `../aiqiezi-cli/README.md`: shared client library and CLI
+- [aiqiezi-server](https://github.com/gocpicnic/aiqiezi-server): system
+  architecture
+- [aiqiezi-cli](https://github.com/gocpicnic/aiqiezi-cli): shared client
+  library and CLI

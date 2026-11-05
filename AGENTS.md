@@ -95,7 +95,8 @@ aiqiezi-gui/
 - `cpal` for audio output when playback is added.
 - Tokio runtime in a background thread.
 - Channels between async workers and the UI thread.
-- `aiqiezi-client` for all backend communication.
+- `aiqiezi-client` from GitHub, pinned to a CLI revision, for all local socket
+  and backend communication.
 - `image` for local thumbnail decode/cache if needed.
 - `tracing` for structured logs.
 
