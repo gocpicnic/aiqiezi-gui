@@ -4,10 +4,17 @@ Native desktop GUI for the aiqiezi single-backend photo and video archive.
 
 ## Status
 
-Planned. The GUI is intentionally deferred until the server and CLI are
-functional.
+First connection and authentication milestone implemented:
 
-The GUI module is not implemented yet.
+- native `eframe`/`egui` window;
+- connection to the local client daemon over the shared local socket;
+- client and server EndpointId display;
+- server EndpointId configuration;
+- login and password change forms;
+- server-info request;
+- background Tokio worker with UI event channels.
+
+Asset browsing, thumbnails, search, and video playback remain deferred.
 
 ## Platform support
 
@@ -41,16 +48,69 @@ The GUI is intended to provide:
 ```text
 egui GUI
     |
+    | local socket: JSON Lines
     v
-aiqiezi-client
+aiqiezi client daemon
     |
-    | iroh JSON + iroh-blobs
+    | persistent client key + iroh JSON + iroh-blobs
     v
 aiqiezi-server
 ```
 
 The GUI uses the shared `aiqiezi-client` library from the CLI repository. It
-does not access PostgreSQL or the server filesystem directly.
+does not access PostgreSQL or the server filesystem directly, and it does not
+create a second iroh endpoint.
+
+## Running
+
+Start the local client daemon first:
+
+```bash
+aiqiezi start
+```
+
+Then run the GUI from source:
+
+```bash
+cargo run
+```
+
+If the daemon is not running, the GUI shows an explicit setup state with the
+command to start it.
+
+The GUI and CLI use the same `AIQIEZI_DATA_DIR` and `AIQIEZI_RUNTIME_DIR`, so
+they share the persistent client key and server EndpointId configuration.
+
+Set both variables to the same absolute paths before starting either process.
+The defaults are relative to the current directory, so starting the CLI and GUI
+from different directories will not connect them to the same daemon.
+
+## Development
+
+```bash
+cargo check
+cargo test
+cargo fmt --all
+cargo clippy --all-targets -- -D warnings
+cargo run
+```
+
+The GUI depends on the shared client library by local path:
+
+```toml
+aiqiezi-client = { path = "../aiqiezi-cli/crates/aiqiezi-client" }
+```
+
+Expected sibling layout:
+
+```text
+aiqiezi-v0/
+├── aiqiezi-server/
+├── aiqiezi-cli/
+└── aiqiezi-gui/
+```
+
+The GUI is built from source; no installers or signing are provided.
 
 ## Why egui
 
@@ -96,16 +156,17 @@ Login and password change must use the persistent client key. The server
 enrolls the connection EndpointId, so a temporary key would enroll the wrong
 identity.
 
+The GUI never creates or stores a second client identity. The daemon owns the
+key and the iroh connection.
+
 ## Future work
 
-1. Scaffold eframe/egui application.
-2. Integrate `aiqiezi-client`.
-3. Add connection and enrollment display.
-4. Add virtualized asset browsing.
-5. Add thumbnails.
-6. Add search, tags, and albums.
-7. Add upload/download progress.
-8. Choose the video decode backend and add in-app playback.
+1. Add virtualized asset browsing.
+2. Add thumbnails.
+3. Add search, tags, and albums.
+4. Add upload/download progress.
+5. Add optional daemon lifecycle management or auto-start.
+6. Choose the video decode backend and add in-app playback.
 
 ## Documentation
 

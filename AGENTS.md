@@ -18,7 +18,7 @@
 
 ## Project context
 
-`aiqiezi-gui` is the planned native desktop UI for the aiqiezi single-backend
+`aiqiezi-gui` is the native desktop UI for the aiqiezi single-backend
 photo/video archive. See [README.md](README.md) and the server repository for
 the system architecture.
 
@@ -34,7 +34,9 @@ Mandatory constraints:
 - after the first password change, authorization is the server-side EndpointId
   whitelist;
 - no session-token flow;
-- status: deferred until server and CLI are functional.
+- talk to the local `aiqiezi` client daemon over the shared local socket;
+- do not create a second iroh endpoint or client key;
+- status: first connection and authentication milestone implemented.
 
 ## Platform support
 
@@ -57,31 +59,38 @@ Rules:
 ```text
 egui GUI
     |
+    | local socket: JSON Lines
     v
-aiqiezi-client library
+aiqiezi client daemon
     |
-    | iroh JSON + iroh-blobs
+    | persistent client key + iroh JSON + iroh-blobs
     v
 aiqiezi-server
 ```
+
+The GUI uses the shared `aiqiezi-client` library for local socket requests.
+It does not own an iroh endpoint and does not create a second client identity.
 
 ## Repository layout
 
 ```text
 aiqiezi-gui/
 ├── Cargo.toml
+├── build.rs
 ├── src/
 │   ├── main.rs
 │   ├── app.rs
-│   ├── ui/
-│   └── workers/
+│   ├── logging.rs
+│   ├── version.rs
+│   └── worker.rs
+├── docs/
 └── AGENTS.md
 ```
 
 ## Stack
 
 - Rust 2021.
-- `eframe` / `egui` with the `wgpu` backend for the desktop UI.
+- `eframe` / `egui` 0.37 with the `wgpu` backend for the desktop UI.
 - `wgpu` for video frame presentation when playback is added.
 - `cpal` for audio output when playback is added.
 - Tokio runtime in a background thread.
@@ -105,14 +114,31 @@ aiqiezi-gui/
 ```text
 UI action
   -> command channel
-  -> background tokio task
-  -> aiqiezi-client
+  -> background Tokio worker
+  -> aiqiezi-client local socket client
+  -> aiqiezi client daemon
   -> server
-  -> response channel
+  -> event channel
   -> UI state update
 ```
 
-Do not call blocking operations from `update()`.
+Do not call blocking operations from `ui()`.
+
+## Client daemon dependency
+
+The GUI requires the local client daemon:
+
+```text
+aiqiezi start
+```
+
+The daemon owns the persistent client key and server connection. The GUI reads
+the same `AIQIEZI_DATA_DIR` and `AIQIEZI_RUNTIME_DIR` as the CLI and connects to
+`<AIQIEZI_RUNTIME_DIR>/client.sock`. Both processes must use the same absolute
+paths; the defaults are relative to the current directory.
+
+If the daemon is not running, show an explicit setup state. Do not shell out to
+the CLI and do not start a second iroh endpoint.
 
 ## Video playback
 
@@ -123,7 +149,7 @@ thumbnails are functional.
 Mandatory architecture when playback is implemented:
 
 - enable the `wgpu` feature of `eframe`;
-- demux and decode on worker threads, never in `update()`;
+- demux and decode on worker threads, never in `ui()`;
 - keep video frame and audio queues bounded; drop late frames instead of
   increasing latency;
 - upload decoded frames as wgpu textures and register them through
@@ -151,16 +177,14 @@ trade-offs. Do not copy FilmCraft's internal codec crates wholesale.
 - The first login uses the server bootstrap password and must be followed by a
   password change. The GUI prompts for passwords without echo and discards
   them after the request.
-- Use the shared client key and stable iroh EndpointId.
-- Login and password change must use the persistent client key; the server
-  enrolls the connection EndpointId, so a temporary key would enroll the wrong
-  identity.
-- Store the client secret key with restrictive permissions.
+- The local daemon owns the persistent client key and iroh EndpointId.
+- Login and password change use the daemon's persistent key; the server enrolls
+  the connection EndpointId.
+- The daemon stores the client secret key with restrictive permissions.
 - After the first password change, authorization is managed by the EndpointId
   whitelist.
 - A disabled or removed EndpointId is rejected at connection time.
 - Redact secrets in logs and UI error messages.
-- Do not log endpoint tickets in full.
 - Treat downloaded media and metadata as untrusted input.
 
 ## Commands
@@ -191,9 +215,10 @@ For Markdown use an HTML comment with the same content.
 
 ## Testing rules
 
-- Unit-test UI state transitions and formatting.
+- Unit-test UI state transitions, status parsing, and formatting.
 - Test pagination and cache behavior.
 - Test error and offline states.
+- Test local-socket request and response handling.
 - Integration tests must not require production data or secrets.
 - Do not make GUI tests depend on a live production server.
 
