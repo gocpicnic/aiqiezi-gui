@@ -33,6 +33,22 @@ Mandatory constraints:
 - no login, password, or session-token flow;
 - status: deferred until server and CLI are functional.
 
+## Platform support
+
+Tier 1 platforms are x86_64 Windows, x86_64 macOS, and x86_64 Linux. The GUI
+is source-build only; do not add installer, signing, or notarization pipelines
+as part of normal feature work. ARM64 targets are deferred.
+
+Rules:
+
+- keep `eframe`/`egui` and `wgpu` usage portable across the three Tier 1
+  targets;
+- use `aiqiezi-client` for platform paths and key storage; do not add
+  Unix-only APIs or shell commands;
+- keep platform-specific blocking work off the UI thread;
+- document any new native dependency and its per-OS build requirement;
+- add ARM64 only after it is explicitly added to the support matrix.
+
 ## Architecture
 
 ```text
