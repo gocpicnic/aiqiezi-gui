@@ -62,15 +62,27 @@ does not access PostgreSQL or the server filesystem directly.
 
 ## Video playback
 
-egui has no built-in video player. Video playback is deferred.
+egui has no built-in video widget or codec, but it can play video: decode
+frames off the UI thread, upload them as wgpu textures, register the texture
+with egui, and paint it with `ui.painter().image(...)`. Audio is played
+separately with `cpal`, and the audio clock drives playback.
 
-When implemented, the strategy must be explicit:
+This is the approach used by [FilmCraft](https://github.com/storytold/filmcraft),
+a pure-Rust video editor built on eframe/egui + wgpu. FilmCraft uses its own
+pure-Rust decoders plus OS hardware decoding; it does not use FFmpeg, mpv, or
+GStreamer at runtime.
 
-- launch an external player;
-- embed libmpv;
-- or decode frames with ffmpeg and handle audio separately.
+Playback remains deferred until browsing and thumbnails work. The decode
+backend is not selected yet. Candidates are:
 
-Do not add a hidden HTTP streaming server.
+- FFmpeg via `ffmpeg-next` (recommended for broad phone/camera format support);
+- embedded libmpv;
+- pure-Rust decoders (large implementation effort);
+- an external player fallback for unsupported formats.
+
+Do not add a hidden HTTP streaming server. See
+[docs/video-playback.md](docs/video-playback.md) for the reference architecture
+and trade-offs.
 
 ## Security
 
@@ -87,10 +99,12 @@ whitelist.
 5. Add thumbnails.
 6. Add search, tags, and albums.
 7. Add upload/download progress.
-8. Decide on video playback integration.
+8. Choose the video decode backend and add in-app playback.
 
 ## Documentation
 
 - [AGENTS.md](AGENTS.md): implementation rules for AI coding agents
+- [docs/video-playback.md](docs/video-playback.md): playback architecture and
+  decoder backend trade-offs
 - `../aiqiezi-server/README.md`: system architecture
 - `../aiqiezi-cli/README.md`: shared client library and CLI

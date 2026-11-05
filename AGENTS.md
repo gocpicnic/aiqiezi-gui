@@ -78,7 +78,9 @@ aiqiezi-gui/
 ## Stack
 
 - Rust 2021.
-- `eframe` / `egui` for the desktop UI.
+- `eframe` / `egui` with the `wgpu` backend for the desktop UI.
+- `wgpu` for video frame presentation when playback is added.
+- `cpal` for audio output when playback is added.
 - Tokio runtime in a background thread.
 - Channels between async workers and the UI thread.
 - `aiqiezi-client` for all backend communication.
@@ -111,15 +113,34 @@ Do not call blocking operations from `update()`.
 
 ## Video playback
 
-Video playback is deferred.
+egui has no built-in video widget, but in-app playback is supported by
+presenting decoded frames as textures. Playback is deferred until browsing and
+thumbnails are functional.
 
-When added, choose one explicit strategy:
+Mandatory architecture when playback is implemented:
 
-- open an external player;
-- embed libmpv;
-- decode with ffmpeg into textures and handle audio separately.
+- enable the `wgpu` feature of `eframe`;
+- demux and decode on worker threads, never in `update()`;
+- keep video frame and audio queues bounded; drop late frames instead of
+  increasing latency;
+- upload decoded frames as wgpu textures and register them through
+  `egui_wgpu` (`register_native_texture` or
+  `update_egui_texture_from_wgpu_texture`);
+- paint the texture with `ui.painter().image(...)`;
+- play audio with `cpal`; use the audio clock as the playback master and a
+  wall clock when there is no audio track or output device;
+- flush queues and restart from a keyframe when seeking;
+- download media through `aiqiezi-client` into a bounded local cache; do not
+  add a hidden HTTP streaming server.
 
-Do not add a hidden HTTP streaming server.
+The decode backend must be chosen explicitly before implementation. FFmpeg via
+`ffmpeg-next` is the recommended default for broad phone/camera format
+coverage. Pure-Rust decoders are a large effort; embedded libmpv and an
+external player remain alternatives for unsupported formats.
+
+Reference implementation: [FilmCraft](https://github.com/storytold/filmcraft).
+See [docs/video-playback.md](docs/video-playback.md) for the pipeline and
+trade-offs. Do not copy FilmCraft's internal codec crates wholesale.
 
 ## Security rules
 
