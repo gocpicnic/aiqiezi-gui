@@ -86,9 +86,15 @@ and trade-offs.
 
 ## Security
 
-The GUI uses the shared client key and stable iroh EndpointId. There is no
-password or session-token flow. Server access is controlled by the EndpointId
-whitelist.
+The first login uses the server bootstrap password and must be followed by a
+password change. The GUI prompts for passwords without echo and never stores
+them. The password change enrolls the shared client EndpointId in the server
+whitelist; after that, access is controlled by the EndpointId whitelist. There
+is no session-token flow.
+
+Login and password change must use the persistent client key. The server
+enrolls the connection EndpointId, so a temporary key would enroll the wrong
+identity.
 
 ## Future work
 

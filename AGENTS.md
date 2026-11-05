@@ -30,7 +30,10 @@ Mandatory constraints:
 - no direct PostgreSQL access;
 - no direct server filesystem access;
 - no shelling out to the CLI for normal reads;
-- no login, password, or session-token flow;
+- initial enrollment uses the server bootstrap password;
+- after the first password change, authorization is the server-side EndpointId
+  whitelist;
+- no session-token flow;
 - status: deferred until server and CLI are functional.
 
 ## Platform support
@@ -144,10 +147,17 @@ trade-offs. Do not copy FilmCraft's internal codec crates wholesale.
 
 ## Security rules
 
-- Never store passwords or session tokens.
+- Never store the server password or session tokens.
+- The first login uses the server bootstrap password and must be followed by a
+  password change. The GUI prompts for passwords without echo and discards
+  them after the request.
 - Use the shared client key and stable iroh EndpointId.
+- Login and password change must use the persistent client key; the server
+  enrolls the connection EndpointId, so a temporary key would enroll the wrong
+  identity.
 - Store the client secret key with restrictive permissions.
-- Server authorization is managed by the EndpointId whitelist.
+- After the first password change, authorization is managed by the EndpointId
+  whitelist.
 - A disabled or removed EndpointId is rejected at connection time.
 - Redact secrets in logs and UI error messages.
 - Do not log endpoint tickets in full.
