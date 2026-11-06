@@ -52,7 +52,9 @@ daemon-starting, or the workspace state; there is no splash.
 
 EndpointId fields include `Paste` and `Copy`, and the inspector and Server Info
 dialog can copy full public IDs and JSON. Native `Ctrl+V` / `Cmd+V` and
-`Ctrl+C` / `Cmd+C` remain available.
+`Ctrl+C` / `Cmd+C` remain available. On Linux Wayland, clipboard access depends
+on compositor data-control support; if `Paste` is unavailable, it reports an
+error and `Ctrl+V` remains the fallback.
 
 See [docs/interface.md](docs/interface.md) for the full interaction guide.
 
