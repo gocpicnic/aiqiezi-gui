@@ -6,6 +6,7 @@
 */
 
 use std::sync::mpsc::{self, Receiver, Sender};
+use std::time::{Duration, Instant};
 
 use aiqiezi_client::aiqiezi_proto::{Request, Response, PROTOCOL_VERSION};
 use aiqiezi_client::{local, ClientConfig};
@@ -13,19 +14,25 @@ use serde_json::{json, Value};
 use tokio::sync::mpsc::{self as tokio_mpsc, UnboundedReceiver, UnboundedSender};
 use tracing::{info, warn};
 
+use crate::daemon_process;
+
 #[derive(Debug)]
 pub enum Command {
+    EnsureDaemon { endpoint_id: Option<String> },
     Status,
     SetServer(String),
     Login(String),
     ChangePassword { old: String, new: String },
     ServerInfo,
+    ShutdownDaemonAndExit,
 }
 
 #[derive(Debug)]
 pub enum Event {
     Fatal(String),
+    EnsureDaemon(Result<StatusInfo, String>),
     Status(Result<StatusInfo, String>),
+    DaemonStopped(Result<(), String>),
     Response { label: String, response: Response },
 }
 
@@ -125,6 +132,10 @@ fn worker_thread(
     runtime.block_on(async move {
         while let Some(command) = commands.recv().await {
             match command {
+                Command::EnsureDaemon { endpoint_id } => {
+                    let result = ensure_daemon(&config, endpoint_id).await;
+                    let _ = events.send(Event::EnsureDaemon(result));
+                }
                 Command::Status => {
                     let result = status_request(&config).await;
                     let _ = events.send(Event::Status(result));
@@ -163,11 +174,84 @@ fn worker_thread(
                         local_request(&config, "server-info", json!({})).await,
                     );
                 }
+                Command::ShutdownDaemonAndExit => {
+                    let result = stop_daemon(&config).await;
+                    let _ = events.send(Event::DaemonStopped(result));
+                }
             }
         }
 
         info!("GUI worker stopped");
     });
+}
+
+async fn ensure_daemon(
+    config: &ClientConfig,
+    endpoint_id: Option<String>,
+) -> Result<StatusInfo, String> {
+    if let Ok(status) = status_request(config).await {
+        if let Some(endpoint_id) = endpoint_id.as_deref() {
+            if status.server_id.as_deref() != Some(endpoint_id) {
+                let response =
+                    local_request(config, "set-server", json!({"endpoint_id": endpoint_id}))
+                        .await
+                        .map_err(|error| format!("{error:#}"))?;
+                if !response.ok {
+                    return Err(response_error(&response));
+                }
+                return status_request(config).await;
+            }
+        }
+        return Ok(status);
+    }
+
+    let mut spawned = daemon_process::spawn_daemon(config, endpoint_id.as_deref())?;
+    let deadline = Instant::now() + Duration::from_secs(20);
+
+    loop {
+        if let Ok(status) = status_request(config).await {
+            return Ok(status);
+        }
+
+        match spawned.child.try_wait() {
+            Ok(Some(status)) => {
+                return Err(format!(
+                    "client daemon exited during startup ({status}); log: {}",
+                    spawned.log_path.display()
+                ));
+            }
+            Ok(None) => {}
+            Err(error) => {
+                return Err(format!(
+                    "could not check the client daemon process: {error}; log: {}",
+                    spawned.log_path.display()
+                ));
+            }
+        }
+
+        if Instant::now() >= deadline {
+            return Err(format!(
+                "client daemon did not become ready within 20 seconds; log: {}",
+                spawned.log_path.display()
+            ));
+        }
+
+        tokio::time::sleep(Duration::from_millis(250)).await;
+    }
+}
+
+async fn stop_daemon(config: &ClientConfig) -> Result<(), String> {
+    match local_request(config, "shutdown", json!({})).await {
+        Ok(response) if response.ok => Ok(()),
+        Ok(response) => Err(response_error(&response)),
+        Err(error) => {
+            if status_request(config).await.is_err() {
+                Ok(())
+            } else {
+                Err(format!("{error:#}"))
+            }
+        }
+    }
 }
 
 async fn status_request(config: &ClientConfig) -> Result<StatusInfo, String> {
@@ -227,8 +311,50 @@ fn response_error(response: &Response) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::StatusInfo;
+    use super::{stop_daemon, StatusInfo};
+    use aiqiezi_client::aiqiezi_proto::{Request, Response};
+    use aiqiezi_client::ClientConfig;
     use serde_json::json;
+
+    #[cfg(unix)]
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn stop_daemon_sends_shutdown() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = ClientConfig::load(dir.path().to_path_buf(), dir.path().join("run")).unwrap();
+        std::fs::create_dir_all(&config.runtime_dir).unwrap();
+        let listener = tokio::net::UnixListener::bind(&config.socket_path).unwrap();
+
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let (read_half, mut write_half) = stream.into_split();
+            let mut reader = BufReader::new(read_half);
+            let mut line = String::new();
+            reader.read_line(&mut line).await.unwrap();
+            let request: Request = serde_json::from_str(line.trim()).unwrap();
+            assert_eq!(request.command, "shutdown");
+            let response =
+                Response::success(request.request_id, json!({"message": "shutting down"}));
+            let mut encoded = serde_json::to_vec(&response).unwrap();
+            encoded.push(b'\n');
+            write_half.write_all(&encoded).await.unwrap();
+            write_half.flush().await.unwrap();
+        });
+
+        stop_daemon(&config).await.unwrap();
+        server.await.unwrap();
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn stop_daemon_is_ok_when_daemon_is_not_running() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = ClientConfig::load(dir.path().to_path_buf(), dir.path().join("run")).unwrap();
+
+        stop_daemon(&config).await.unwrap();
+    }
 
     #[test]
     fn parses_status_payload() {

@@ -29,7 +29,9 @@ Mandatory constraints:
 - no HTTP client or hidden HTTP server;
 - no direct PostgreSQL access;
 - no direct server filesystem access;
-- no shelling out to the CLI for normal reads;
+- do not shell out to the CLI for normal reads or commands;
+- the GUI may spawn the bundled `aiqiezi` binary only for local daemon
+  lifecycle management;
 - initial enrollment uses the server bootstrap password;
 - after the first password change, authorization is the server-side EndpointId
   whitelist;
@@ -81,6 +83,7 @@ aiqiezi-gui/
 ├── src/
 │   ├── main.rs
 │   ├── app.rs
+│   ├── daemon_process.rs
 │   ├── logging.rs
 │   ├── version.rs
 │   └── worker.rs
@@ -123,8 +126,10 @@ dist/LICENSE
 ```
 
 The Makefile reads the pinned `aiqiezi-cli` revision from `Cargo.toml` and
-builds the `aiqiezi` binary from that Git revision. The GUI and daemon must
-use the same client protocol revision. No local CLI checkout is required.
+builds the `aiqiezi` binary from that Git revision. The pin must be a CLI
+revision that supports `aiqiezi start [<server-endpoint-id>]`; the current pin
+is the `v0.1.1` release commit. The GUI and daemon must use the same client
+protocol revision. No local CLI checkout is required.
 
 `AIQIEZI_CLI_BIN=/path/to/aiqiezi make build` allows a locally built daemon to
 be bundled instead.
@@ -147,21 +152,27 @@ UI action
 
 Do not call blocking operations from `ui()`.
 
-## Client daemon dependency
-
-The GUI requires the local client daemon:
-
-```text
-aiqiezi start
-```
+## Client daemon lifecycle
 
 The daemon owns the persistent client key and server connection. The GUI reads
 the same `AIQIEZI_DATA_DIR` and `AIQIEZI_RUNTIME_DIR` as the CLI and connects to
 `<AIQIEZI_RUNTIME_DIR>/client.sock`. Both processes must use the same absolute
 paths; the defaults are relative to the current directory.
 
-If the daemon is not running, show an explicit setup state. Do not shell out to
-the CLI and do not start a second iroh endpoint.
+The GUI may spawn the bundled `aiqiezi start` process only for daemon lifecycle:
+
+- on launch, if the daemon is not running, start it automatically;
+- on first run with no server EndpointId, show the setup form, save the
+  EndpointId through the daemon or CLI, then start the daemon;
+- the window close icon exits only the GUI and leaves the daemon running;
+- the explicit **Exit and stop client** button sends `shutdown` to the local
+  daemon and then closes the GUI.
+
+Find the CLI in this order: `AIQIEZI_CLI_BIN`, next to the GUI executable, then
+`PATH`. Redirect daemon output to `<data_dir>/client.log`.
+
+Do not use the CLI for normal reads or commands, and do not start a second iroh
+endpoint or client key.
 
 ## Video playback
 

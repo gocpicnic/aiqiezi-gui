@@ -206,8 +206,8 @@ dependencies = [
 
 [[package]]
 name = "aiqiezi-client"
-version = "0.1.0"
-source = "git+https://github.com/gocpicnic/aiqiezi-cli?rev=477c06c9f5041f381d42b81f9ac0deccea890a72#477c06c9f5041f381d42b81f9ac0deccea890a72"
+version = "0.1.1"
+source = "git+https://github.com/gocpicnic/aiqiezi-cli?rev=7e2a5e19681948595afa11d7f54b05003a333121#7e2a5e19681948595afa11d7f54b05003a333121"
 dependencies = [
  "aiqiezi-proto",
  "anyhow",

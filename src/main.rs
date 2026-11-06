@@ -6,6 +6,7 @@
 */
 
 mod app;
+mod daemon_process;
 mod logging;
 mod version;
 mod worker;

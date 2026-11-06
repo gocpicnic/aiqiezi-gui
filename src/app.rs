@@ -8,7 +8,7 @@
 use std::time::Duration;
 
 use aiqiezi_client::aiqiezi_proto::Response;
-use aiqiezi_client::ClientConfig;
+use aiqiezi_client::{ClientConfig, EndpointId};
 use eframe::egui::{self, Color32, RichText};
 use serde_json::Value;
 
@@ -20,7 +20,8 @@ const ERROR_COLOR: Color32 = Color32::from_rgb(220, 90, 90);
 const WARN_COLOR: Color32 = Color32::from_rgb(220, 170, 70);
 
 enum ConnectionState {
-    Loading,
+    NeedsServer,
+    Starting,
     Running(StatusInfo),
     Error(String),
 }
@@ -34,6 +35,8 @@ pub struct App {
     config_error: Option<String>,
     worker: Option<WorkerHandle>,
     connection: ConnectionState,
+    setup_required: bool,
+    close_requested: bool,
     server_id_input: String,
     password: String,
     old_password: String,
@@ -48,26 +51,49 @@ impl App {
     pub fn new(_cc: &eframe::CreationContext<'_>) -> Self {
         match ClientConfig::from_env() {
             Ok(config) => {
+                let setup_required = config.server_id.is_none();
                 let worker = WorkerHandle::start(config);
-                worker.send(Command::Status);
-                Self {
-                    config_error: None,
-                    worker: Some(worker),
-                    connection: ConnectionState::Loading,
-                    server_id_input: String::new(),
-                    password: String::new(),
-                    old_password: String::new(),
-                    new_password: String::new(),
-                    confirm_password: String::new(),
-                    message: None,
-                    server_info: None,
-                    busy: true,
+                if setup_required {
+                    Self {
+                        config_error: None,
+                        worker: Some(worker),
+                        connection: ConnectionState::NeedsServer,
+                        setup_required: true,
+                        close_requested: false,
+                        server_id_input: String::new(),
+                        password: String::new(),
+                        old_password: String::new(),
+                        new_password: String::new(),
+                        confirm_password: String::new(),
+                        message: None,
+                        server_info: None,
+                        busy: false,
+                    }
+                } else {
+                    worker.send(Command::EnsureDaemon { endpoint_id: None });
+                    Self {
+                        config_error: None,
+                        worker: Some(worker),
+                        connection: ConnectionState::Starting,
+                        setup_required: false,
+                        close_requested: false,
+                        server_id_input: String::new(),
+                        password: String::new(),
+                        old_password: String::new(),
+                        new_password: String::new(),
+                        confirm_password: String::new(),
+                        message: None,
+                        server_info: None,
+                        busy: true,
+                    }
                 }
             }
             Err(error) => Self {
                 config_error: Some(format!("{error:#}")),
                 worker: None,
                 connection: ConnectionState::Error("client configuration failed".to_string()),
+                setup_required: false,
+                close_requested: false,
                 server_id_input: String::new(),
                 password: String::new(),
                 old_password: String::new(),
@@ -90,24 +116,78 @@ impl App {
             match event {
                 Event::Fatal(error) => {
                     self.busy = false;
-                    self.connection = ConnectionState::Error(error);
+                    self.connection = ConnectionState::Error(error.clone());
+                    self.message = Some(Message {
+                        text: error,
+                        error: true,
+                    });
                 }
-                Event::Status(Ok(status)) => {
+                Event::EnsureDaemon(result) => {
                     self.busy = false;
-                    if self.server_id_input.is_empty() {
-                        self.server_id_input = status.server_id.clone().unwrap_or_default();
+                    match result {
+                        Ok(status) => self.apply_status(status),
+                        Err(error) => {
+                            self.message = Some(Message {
+                                text: error.clone(),
+                                error: true,
+                            });
+                            if self.setup_required {
+                                self.connection = ConnectionState::NeedsServer;
+                            } else {
+                                self.connection = ConnectionState::Error(error);
+                            }
+                        }
                     }
-                    self.connection = ConnectionState::Running(status);
                 }
-                Event::Status(Err(error)) => {
+                Event::Status(result) => {
                     self.busy = false;
-                    self.connection = ConnectionState::Error(error);
+                    match result {
+                        Ok(status) => self.apply_status(status),
+                        Err(error) => {
+                            self.message = Some(Message {
+                                text: error.clone(),
+                                error: true,
+                            });
+                            if self.setup_required {
+                                self.connection = ConnectionState::NeedsServer;
+                            } else {
+                                self.connection = ConnectionState::Error(error);
+                            }
+                        }
+                    }
+                }
+                Event::DaemonStopped(result) => {
+                    self.busy = false;
+                    match result {
+                        Ok(()) => {
+                            self.close_requested = true;
+                        }
+                        Err(error) => {
+                            self.message = Some(Message {
+                                text: format!("could not stop client daemon: {error}"),
+                                error: true,
+                            });
+                        }
+                    }
                 }
                 Event::Response { label, response } => {
                     self.busy = false;
                     self.handle_response(&label, response);
                 }
             }
+        }
+    }
+
+    fn apply_status(&mut self, status: StatusInfo) {
+        if let Some(server_id) = &status.server_id {
+            if self.server_id_input.is_empty() {
+                self.server_id_input = server_id.clone();
+            }
+            self.setup_required = false;
+            self.connection = ConnectionState::Running(status);
+        } else {
+            self.setup_required = true;
+            self.connection = ConnectionState::NeedsServer;
         }
     }
 
@@ -173,26 +253,46 @@ impl App {
         self.send(Command::Status);
     }
 
-    fn draw_header(&self, ui: &mut egui::Ui) {
+    fn draw_header(&mut self, ui: &mut egui::Ui) -> Option<Command> {
+        let mut pending = None;
         egui::Panel::top("header").show(ui, |ui| {
             ui.add_space(6.0);
             ui.horizontal(|ui| {
                 ui.heading("aiqiezi");
                 ui.label(RichText::new("photo/video archive").weak());
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui
+                        .add_enabled(!self.busy, egui::Button::new("Exit and stop client"))
+                        .on_hover_text("Stop the local client daemon and exit")
+                        .clicked()
+                    {
+                        if self.worker.is_some() {
+                            pending = Some(Command::ShutdownDaemonAndExit);
+                        } else {
+                            self.close_requested = true;
+                        }
+                    }
                     ui.label(RichText::new(format!("v{}", version::VERSION)).weak());
                 });
             });
             ui.add_space(6.0);
         });
+        pending
     }
 
     fn draw_status(&self, ui: &mut egui::Ui) {
         match &self.connection {
-            ConnectionState::Loading => {
+            ConnectionState::NeedsServer => {
+                ui.label(
+                    RichText::new("Server setup required")
+                        .color(WARN_COLOR)
+                        .strong(),
+                );
+            }
+            ConnectionState::Starting => {
                 ui.horizontal(|ui| {
                     ui.spinner();
-                    ui.label("Connecting to the local client daemon...");
+                    ui.label("Starting the local client daemon...");
                 });
             }
             ConnectionState::Error(error) => {
@@ -205,7 +305,7 @@ impl App {
                     ui.label(RichText::new(config_error).color(ERROR_COLOR));
                 } else {
                     ui.label(RichText::new(error).color(ERROR_COLOR));
-                    ui.label("Start it in a terminal with: aiqiezi start");
+                    ui.label("Use Refresh or start the daemon from the controls below.");
                 }
             }
             ConnectionState::Running(status) => {
@@ -241,7 +341,75 @@ impl App {
         }
     }
 
+    fn draw_setup(&mut self, ui: &mut egui::Ui) -> Option<Command> {
+        let mut pending = None;
+        ui.add_space(12.0);
+        ui.heading("Connect to aiqiezi-server");
+        ui.label(
+            "Enter the aiqiezi-server EndpointId. The GUI will start the local client \
+             daemon after saving it.",
+        );
+        ui.add_space(6.0);
+        ui.label("Get it on the server host with:");
+        ui.monospace("aiqiezi-server whoami");
+        ui.add_space(8.0);
+
+        ui.horizontal(|ui| {
+            ui.label("Server EndpointId");
+            ui.add(
+                egui::TextEdit::singleline(&mut self.server_id_input)
+                    .desired_width(560.0)
+                    .hint_text("server EndpointId"),
+            );
+            if ui
+                .add_enabled(
+                    !self.busy && !self.server_id_input.trim().is_empty(),
+                    egui::Button::new("Save and start client"),
+                )
+                .clicked()
+            {
+                match self.server_id_input.trim().parse::<EndpointId>() {
+                    Ok(endpoint_id) => {
+                        self.message = None;
+                        self.connection = ConnectionState::Starting;
+                        pending = Some(Command::EnsureDaemon {
+                            endpoint_id: Some(endpoint_id.to_string()),
+                        });
+                    }
+                    Err(error) => {
+                        self.message = Some(Message {
+                            text: format!("invalid aiqiezi-server EndpointId: {error}"),
+                            error: true,
+                        });
+                    }
+                }
+            }
+            if self.busy {
+                ui.spinner();
+            }
+        });
+
+        if let Some(message) = &self.message {
+            ui.add_space(8.0);
+            ui.label(RichText::new(&message.text).color(if message.error {
+                ERROR_COLOR
+            } else {
+                OK_COLOR
+            }));
+        }
+
+        pending
+    }
+
     fn draw_controls(&mut self, ui: &mut egui::Ui) -> Option<Command> {
+        if matches!(self.connection, ConnectionState::NeedsServer) {
+            return self.draw_setup(ui);
+        }
+
+        if matches!(self.connection, ConnectionState::Starting) {
+            return None;
+        }
+
         let connected = matches!(self.connection, ConnectionState::Running(_));
         let mut pending = None;
 
@@ -257,6 +425,15 @@ impl App {
                 pending = Some(Command::Status);
             }
             if ui
+                .add_enabled(
+                    self.worker.is_some() && !self.busy && !self.setup_required && !connected,
+                    egui::Button::new("Start client daemon"),
+                )
+                .clicked()
+            {
+                pending = Some(Command::EnsureDaemon { endpoint_id: None });
+            }
+            if ui
                 .add_enabled(connected && !self.busy, egui::Button::new("Server info"))
                 .clicked()
             {
@@ -268,6 +445,14 @@ impl App {
         });
 
         if !connected {
+            if let Some(message) = &self.message {
+                ui.add_space(8.0);
+                ui.label(RichText::new(&message.text).color(if message.error {
+                    ERROR_COLOR
+                } else {
+                    OK_COLOR
+                }));
+            }
             return pending;
         }
 
@@ -399,19 +584,24 @@ impl App {
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         self.poll_events();
-        self.draw_header(ui);
+        let mut pending = self.draw_header(ui);
 
-        let mut pending = None;
         egui::CentralPanel::default().show(ui, |ui| {
             egui::ScrollArea::vertical().show(ui, |ui| {
                 self.draw_status(ui);
                 ui.add_space(12.0);
-                pending = self.draw_controls(ui);
+                if let Some(command) = self.draw_controls(ui) {
+                    pending = Some(command);
+                }
             });
         });
 
         if let Some(command) = pending {
             self.send(command);
+        }
+
+        if self.close_requested {
+            ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
         }
 
         if self.busy {

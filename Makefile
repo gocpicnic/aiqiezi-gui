@@ -61,6 +61,9 @@ check-cli-rev:
 	}
 
 run:
+	@if [ -x "dist/aiqiezi$(EXE_EXT)" ]; then \
+		export AIQIEZI_CLI_BIN="$$PWD/dist/aiqiezi$(EXE_EXT)"; \
+	fi; \
 	BUILD_DATE="$(BUILD_DATE)" $(CARGO) run --locked -- $(ARGS)
 
 fmt:

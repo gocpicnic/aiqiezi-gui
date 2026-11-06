@@ -7,12 +7,16 @@ Native desktop GUI for the aiqiezi single-backend photo and video archive.
 First connection and authentication milestone implemented:
 
 - native `eframe`/`egui` window;
+- automatic local client daemon startup;
+- first-run server EndpointId setup form;
 - connection to the local client daemon over the shared local socket;
 - client and server EndpointId display;
 - server EndpointId configuration;
 - login and password change forms;
 - server-info request;
-- background Tokio worker with UI event channels.
+- background Tokio worker with UI event channels;
+- window close leaves the daemon running;
+- explicit Exit button stops the daemon and exits.
 
 Asset browsing, thumbnails, search, and video playback remain deferred.
 
@@ -63,20 +67,34 @@ create a second iroh endpoint.
 
 ## Running
 
-Start the local client daemon first:
-
-```bash
-aiqiezi start
-```
-
-Then run the GUI from source:
+Run the GUI from source:
 
 ```bash
 cargo run
 ```
 
-If the daemon is not running, the GUI shows an explicit setup state with the
-command to start it.
+Or run the bundled build:
+
+```bash
+make build
+cd dist
+./aiqiezi-gui
+```
+
+The GUI starts the local client daemon automatically. On the first run it asks
+for the aiqiezi-server EndpointId:
+
+```bash
+# On the server host
+aiqiezi-server whoami
+```
+
+After the EndpointId is saved, the GUI starts the daemon and shows the login
+form. Later launches reuse the saved EndpointId and attach to an already-running
+daemon.
+
+For source runs, the GUI finds the daemon from `AIQIEZI_CLI_BIN`, next to the GUI
+binary, or on `PATH`. `make build` bundles both binaries in `dist/`.
 
 The GUI and CLI use the same `AIQIEZI_DATA_DIR` and `AIQIEZI_RUNTIME_DIR`, so
 they share the persistent client key and server EndpointId configuration.
@@ -84,6 +102,9 @@ they share the persistent client key and server EndpointId configuration.
 Set both variables to the same absolute paths before starting either process.
 The defaults are relative to the current directory, so starting the CLI and GUI
 from different directories will not connect them to the same daemon.
+
+Closing the window exits only the GUI and leaves the daemon running. Use
+**Exit and stop client** to stop the daemon as well.
 
 ## Development
 
@@ -98,7 +119,7 @@ cargo run
 The GUI depends on the shared client library through a pinned Git dependency:
 
 ```toml
-aiqiezi-client = { git = "https://github.com/gocpicnic/aiqiezi-cli", rev = "477c06c9f5041f381d42b81f9ac0deccea890a72" }
+aiqiezi-client = { git = "https://github.com/gocpicnic/aiqiezi-cli", rev = "7e2a5e19681948595afa11d7f54b05003a333121" }
 ```
 
 Update the pinned revision when the shared client library changes. No local
@@ -133,9 +154,11 @@ Run the bundle:
 
 ```bash
 cd dist
-./aiqiezi start
 ./aiqiezi-gui
 ```
+
+The GUI starts `./aiqiezi` automatically. On first run it asks for the server
+EndpointId, then shows login.
 
 To bundle a locally built CLI instead:
 
@@ -196,8 +219,7 @@ key and the iroh connection.
 2. Add thumbnails.
 3. Add search, tags, and albums.
 4. Add upload/download progress.
-5. Add optional daemon lifecycle management or auto-start.
-6. Choose the video decode backend and add in-app playback.
+5. Choose the video decode backend and add in-app playback.
 
 ## Documentation
 
