@@ -9,6 +9,7 @@ mod app;
 mod daemon_process;
 mod logging;
 mod logo;
+mod theme;
 mod version;
 mod worker;
 
@@ -17,13 +18,11 @@ use eframe::egui;
 fn main() -> eframe::Result {
     logging::init();
 
-    let logo = logo::load();
-    let splash_image = logo.image;
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size(egui::vec2(980.0, 720.0))
-            .with_min_inner_size(egui::vec2(760.0, 540.0))
-            .with_icon(logo.icon),
+            .with_inner_size(egui::vec2(1280.0, 800.0))
+            .with_min_inner_size(egui::vec2(980.0, 640.0))
+            .with_icon(logo::icon()),
         renderer: eframe::Renderer::Wgpu,
         ..Default::default()
     };
@@ -31,6 +30,6 @@ fn main() -> eframe::Result {
     eframe::run_native(
         "aiqiezi",
         options,
-        Box::new(move |cc| Ok(Box::new(app::App::new(cc, splash_image)))),
+        Box::new(|cc| Ok(Box::new(app::App::new(cc)))),
     )
 }

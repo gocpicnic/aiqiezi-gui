@@ -14,30 +14,29 @@ Branding files live under `assets/`:
 ```text
 assets/
 ├── aiqiezi.ico   # Windows executable icon
-└── aiqiezi.png   # splash and runtime window icon
+└── aiqiezi.png   # runtime window and taskbar icon
 ```
 
 Both files are embedded at build time. The application does not load branding
 files from the runtime directory.
 
-- `aiqiezi.png` is a 340×340 RGBA PNG. It is decoded into an egui texture for
-  the startup splash and used as the native window/taskbar icon.
+- `aiqiezi.png` is a 340×340 RGBA PNG used as the native window/taskbar icon.
 - `aiqiezi.ico` contains 16, 32, 48, 64, 128, and 256 pixel images. Windows
   builds embed it in the executable through `winresource` in `build.rs`.
 - Linux and macOS builds do not invoke the Windows resource compiler.
 
-## Startup splash
+There is no startup splash. The main workspace does not display the logo,
+wordmark, or a brand banner; it follows the LightCraft-style chrome-only layout.
+The icon is used only by the operating system.
 
-The splash appears for 1.5 seconds at process startup:
+## Workspace style
 
-- dark background;
-- centered aiqiezi logo;
-- title and subtitle;
-- loading indicator.
-
-The splash is presentation-only. Daemon startup and worker events continue in
-the background, and the normal setup, starting, or login screen appears after
-the timeout.
+- LightCraft-inspired dark chrome and a blue accent.
+- Menu bar, toolbar, resizable library sidebar, central asset grid, right
+  inspector, and bottom status bar.
+- No logo inside the application workspace.
+- FilmCraft is not a layout reference; it is only a reference for future video
+  playback.
 
 ## Typography
 

@@ -5,25 +5,73 @@
   license that can be found in the LICENSE file.
 */
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
-use aiqiezi_client::aiqiezi_proto::Response;
+use aiqiezi_client::aiqiezi_proto::{error_codes, Response};
 use aiqiezi_client::{ClientConfig, EndpointId};
-use eframe::egui::{self, Color32, RichText};
+use eframe::egui::{self, RichText};
 use serde_json::Value;
 
+use crate::theme;
 use crate::version;
 use crate::worker::{Command, Event, StatusInfo, WorkerHandle};
 
-const OK_COLOR: Color32 = Color32::from_rgb(80, 180, 100);
-const ERROR_COLOR: Color32 = Color32::from_rgb(220, 90, 90);
-const WARN_COLOR: Color32 = Color32::from_rgb(220, 170, 70);
-
+#[derive(Clone, Copy, PartialEq, Eq)]
 enum ConnectionState {
     NeedsServer,
     Starting,
-    Running(StatusInfo),
-    Error(String),
+    Running,
+    Error,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum NavItem {
+    AllPhotos,
+    Videos,
+    RecentlyAdded,
+    Favorites,
+    Albums,
+    Folders,
+    Tags,
+    RecentlyDeleted,
+}
+
+impl NavItem {
+    fn label(self) -> &'static str {
+        match self {
+            Self::AllPhotos => "All Photos",
+            Self::Videos => "Videos",
+            Self::RecentlyAdded => "Recently Added",
+            Self::Favorites => "Favorites",
+            Self::Albums => "Albums",
+            Self::Folders => "Folders",
+            Self::Tags => "Tags",
+            Self::RecentlyDeleted => "Recently Deleted",
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum InspectorTab {
+    Info,
+    Server,
+}
+
+#[derive(Clone, Copy)]
+enum MenuAction {
+    Refresh,
+    Exit,
+    ToggleSidebar,
+    ToggleInspector,
+    GridView,
+    ListView,
+    ClearSearch,
+    Login,
+    ChangePassword,
+    ServerInfo,
+    ChangeEndpoint,
+    Reconnect,
+    About,
 }
 
 struct Message {
@@ -35,26 +83,36 @@ pub struct App {
     config_error: Option<String>,
     worker: Option<WorkerHandle>,
     connection: ConnectionState,
+    connection_error: Option<String>,
+    status: Option<StatusInfo>,
     setup_required: bool,
     close_requested: bool,
+    busy: bool,
+    message: Option<Message>,
     server_id_input: String,
-    password: String,
+    server_info: Option<Value>,
+
+    nav: NavItem,
+    inspector_tab: InspectorTab,
+    show_sidebar: bool,
+    show_inspector: bool,
+    grid_view: bool,
+    search: String,
+
+    login_open: bool,
+    login_password: String,
+    change_password_open: bool,
     old_password: String,
     new_password: String,
     confirm_password: String,
-    message: Option<Message>,
-    server_info: Option<Value>,
-    busy: bool,
-    splash_texture: egui::TextureHandle,
-    splash_until: Instant,
+    endpoint_open: bool,
+    server_info_open: bool,
+    about_open: bool,
 }
 
 impl App {
-    pub fn new(cc: &eframe::CreationContext<'_>, splash_image: egui::ColorImage) -> Self {
-        let splash_texture =
-            cc.egui_ctx
-                .load_texture("aiqiezi-logo", splash_image, egui::TextureOptions::LINEAR);
-        let splash_until = Instant::now() + Duration::from_millis(1500);
+    pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
+        theme::apply(&cc.egui_ctx);
 
         match ClientConfig::from_env() {
             Ok(config) => {
@@ -65,18 +123,29 @@ impl App {
                         config_error: None,
                         worker: Some(worker),
                         connection: ConnectionState::NeedsServer,
+                        connection_error: None,
+                        status: None,
                         setup_required: true,
                         close_requested: false,
+                        busy: false,
+                        message: None,
                         server_id_input: String::new(),
-                        password: String::new(),
+                        server_info: None,
+                        nav: NavItem::AllPhotos,
+                        inspector_tab: InspectorTab::Info,
+                        show_sidebar: true,
+                        show_inspector: true,
+                        grid_view: true,
+                        search: String::new(),
+                        login_open: false,
+                        login_password: String::new(),
+                        change_password_open: false,
                         old_password: String::new(),
                         new_password: String::new(),
                         confirm_password: String::new(),
-                        message: None,
-                        server_info: None,
-                        busy: false,
-                        splash_texture: splash_texture.clone(),
-                        splash_until,
+                        endpoint_open: false,
+                        server_info_open: false,
+                        about_open: false,
                     }
                 } else {
                     worker.send(Command::EnsureDaemon { endpoint_id: None });
@@ -84,37 +153,59 @@ impl App {
                         config_error: None,
                         worker: Some(worker),
                         connection: ConnectionState::Starting,
+                        connection_error: None,
+                        status: None,
                         setup_required: false,
                         close_requested: false,
+                        busy: true,
+                        message: None,
                         server_id_input: String::new(),
-                        password: String::new(),
+                        server_info: None,
+                        nav: NavItem::AllPhotos,
+                        inspector_tab: InspectorTab::Info,
+                        show_sidebar: true,
+                        show_inspector: true,
+                        grid_view: true,
+                        search: String::new(),
+                        login_open: false,
+                        login_password: String::new(),
+                        change_password_open: false,
                         old_password: String::new(),
                         new_password: String::new(),
                         confirm_password: String::new(),
-                        message: None,
-                        server_info: None,
-                        busy: true,
-                        splash_texture: splash_texture.clone(),
-                        splash_until,
+                        endpoint_open: false,
+                        server_info_open: false,
+                        about_open: false,
                     }
                 }
             }
             Err(error) => Self {
                 config_error: Some(format!("{error:#}")),
                 worker: None,
-                connection: ConnectionState::Error("client configuration failed".to_string()),
+                connection: ConnectionState::Error,
+                connection_error: Some("client configuration failed".to_string()),
+                status: None,
                 setup_required: false,
                 close_requested: false,
+                busy: false,
+                message: None,
                 server_id_input: String::new(),
-                password: String::new(),
+                server_info: None,
+                nav: NavItem::AllPhotos,
+                inspector_tab: InspectorTab::Info,
+                show_sidebar: true,
+                show_inspector: true,
+                grid_view: true,
+                search: String::new(),
+                login_open: false,
+                login_password: String::new(),
+                change_password_open: false,
                 old_password: String::new(),
                 new_password: String::new(),
                 confirm_password: String::new(),
-                message: None,
-                server_info: None,
-                busy: false,
-                splash_texture,
-                splash_until,
+                endpoint_open: false,
+                server_info_open: false,
+                about_open: false,
             },
         }
     }
@@ -129,7 +220,8 @@ impl App {
             match event {
                 Event::Fatal(error) => {
                     self.busy = false;
-                    self.connection = ConnectionState::Error(error.clone());
+                    self.connection = ConnectionState::Error;
+                    self.connection_error = Some(error.clone());
                     self.message = Some(Message {
                         text: error,
                         error: true,
@@ -137,8 +229,14 @@ impl App {
                 }
                 Event::EnsureDaemon(result) => {
                     self.busy = false;
+                    let was_setup = self.setup_required;
                     match result {
-                        Ok(status) => self.apply_status(status),
+                        Ok(status) => {
+                            self.apply_status(status);
+                            if was_setup && !self.setup_required {
+                                self.login_open = true;
+                            }
+                        }
                         Err(error) => {
                             self.message = Some(Message {
                                 text: error.clone(),
@@ -147,7 +245,8 @@ impl App {
                             if self.setup_required {
                                 self.connection = ConnectionState::NeedsServer;
                             } else {
-                                self.connection = ConnectionState::Error(error);
+                                self.connection = ConnectionState::Error;
+                                self.connection_error = Some(error);
                             }
                         }
                     }
@@ -164,7 +263,8 @@ impl App {
                             if self.setup_required {
                                 self.connection = ConnectionState::NeedsServer;
                             } else {
-                                self.connection = ConnectionState::Error(error);
+                                self.connection = ConnectionState::Error;
+                                self.connection_error = Some(error);
                             }
                         }
                     }
@@ -172,9 +272,7 @@ impl App {
                 Event::DaemonStopped(result) => {
                     self.busy = false;
                     match result {
-                        Ok(()) => {
-                            self.close_requested = true;
-                        }
+                        Ok(()) => self.close_requested = true,
                         Err(error) => {
                             self.message = Some(Message {
                                 text: format!("could not stop client daemon: {error}"),
@@ -197,15 +295,27 @@ impl App {
                 self.server_id_input = server_id.clone();
             }
             self.setup_required = false;
-            self.connection = ConnectionState::Running(status);
+            self.connection = ConnectionState::Running;
+            self.connection_error = None;
+            self.status = Some(status);
         } else {
             self.setup_required = true;
             self.connection = ConnectionState::NeedsServer;
+            self.status = Some(status);
         }
     }
 
     fn handle_response(&mut self, label: &str, response: Response) {
         if !response.ok {
+            if label == "login"
+                && response
+                    .error
+                    .as_ref()
+                    .is_some_and(|error| error.code == error_codes::PASSWORD_CHANGE_REQUIRED)
+            {
+                self.login_open = false;
+                self.change_password_open = true;
+            }
             self.message = Some(Message {
                 text: response_error(&response),
                 error: true,
@@ -216,12 +326,14 @@ impl App {
         match label {
             "server-info" => {
                 self.server_info = response.data;
+                self.server_info_open = true;
                 self.message = Some(Message {
                     text: "server-info received".to_string(),
                     error: false,
                 });
             }
             "set-server" => {
+                self.endpoint_open = false;
                 self.message = Some(Message {
                     text: "server EndpointId saved".to_string(),
                     error: false,
@@ -229,7 +341,8 @@ impl App {
                 self.refresh_status();
             }
             "login" => {
-                self.password.clear();
+                self.login_open = false;
+                self.login_password.clear();
                 self.message = Some(Message {
                     text: "login successful".to_string(),
                     error: false,
@@ -237,6 +350,7 @@ impl App {
                 self.refresh_status();
             }
             "change-password" => {
+                self.change_password_open = false;
                 self.old_password.clear();
                 self.new_password.clear();
                 self.confirm_password.clear();
@@ -266,371 +380,803 @@ impl App {
         self.send(Command::Status);
     }
 
-    fn draw_splash(&self, ui: &mut egui::Ui) {
-        egui::CentralPanel::default()
-            .frame(egui::Frame::NONE.fill(Color32::from_rgb(14, 16, 20)))
-            .show(ui, |ui| {
-                let rect = ui.max_rect();
-                let center = rect.center();
-                let logo_rect = egui::Rect::from_center_size(
-                    center - egui::vec2(0.0, 35.0),
-                    egui::vec2(170.0, 170.0),
-                );
-                ui.painter().image(
-                    self.splash_texture.id(),
-                    logo_rect,
-                    egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
-                    Color32::WHITE,
-                );
-                ui.painter().text(
-                    center + egui::vec2(0.0, 95.0),
-                    egui::Align2::CENTER_CENTER,
-                    "aiqiezi",
-                    egui::FontId::proportional(30.0),
-                    Color32::WHITE,
-                );
-                ui.painter().text(
-                    center + egui::vec2(0.0, 128.0),
-                    egui::Align2::CENTER_CENTER,
-                    "photo/video archive",
-                    egui::FontId::proportional(15.0),
-                    Color32::GRAY,
-                );
-                ui.put(
-                    egui::Rect::from_center_size(
-                        center + egui::vec2(0.0, 178.0),
-                        egui::vec2(20.0, 20.0),
-                    ),
-                    egui::Spinner::new(),
-                );
-            });
+    fn handle_menu_action(&mut self, action: MenuAction) -> Option<Command> {
+        match action {
+            MenuAction::Refresh => {
+                if self.connection == ConnectionState::Running {
+                    return Some(Command::Status);
+                }
+            }
+            MenuAction::Exit => {
+                if self.worker.is_some() {
+                    return Some(Command::ShutdownDaemonAndExit);
+                }
+                self.close_requested = true;
+            }
+            MenuAction::ToggleSidebar => self.show_sidebar = !self.show_sidebar,
+            MenuAction::ToggleInspector => self.show_inspector = !self.show_inspector,
+            MenuAction::GridView => self.grid_view = true,
+            MenuAction::ListView => self.grid_view = false,
+            MenuAction::ClearSearch => self.search.clear(),
+            MenuAction::Login => self.login_open = true,
+            MenuAction::ChangePassword => self.change_password_open = true,
+            MenuAction::ServerInfo => {
+                if self.connection == ConnectionState::Running {
+                    return Some(Command::ServerInfo);
+                }
+            }
+            MenuAction::ChangeEndpoint => {
+                if let Some(status) = &self.status {
+                    self.server_id_input = status.server_id.clone().unwrap_or_default();
+                }
+                self.endpoint_open = true;
+            }
+            MenuAction::Reconnect => {
+                self.connection = ConnectionState::Starting;
+                return Some(Command::EnsureDaemon { endpoint_id: None });
+            }
+            MenuAction::About => self.about_open = true,
+        }
+        None
     }
 
-    fn draw_header(&mut self, ui: &mut egui::Ui) -> Option<Command> {
-        let mut pending = None;
-        egui::Panel::top("header").show(ui, |ui| {
-            ui.add_space(6.0);
-            ui.horizontal(|ui| {
-                ui.heading("aiqiezi");
-                ui.label(RichText::new("photo/video archive").weak());
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui
-                        .add_enabled(!self.busy, egui::Button::new("Exit and stop client"))
-                        .on_hover_text("Stop the local client daemon and exit")
-                        .clicked()
-                    {
-                        if self.worker.is_some() {
-                            pending = Some(Command::ShutdownDaemonAndExit);
-                        } else {
-                            self.close_requested = true;
+    fn draw_menu_bar(&mut self, ui: &mut egui::Ui) -> Option<MenuAction> {
+        let mut action = None;
+        let connected = self.connection == ConnectionState::Running;
+
+        egui::Panel::top("menu_bar")
+            .exact_size(30.0)
+            .frame(egui::Frame::NONE.fill(theme::CHROME))
+            .show(ui, |ui| {
+                egui::MenuBar::new().ui(ui, |ui| {
+                    ui.menu_button("File", |ui| {
+                        if ui
+                            .add_enabled(connected, egui::Button::new("Refresh"))
+                            .clicked()
+                        {
+                            action = Some(MenuAction::Refresh);
+                            ui.close();
                         }
-                    }
-                    ui.label(RichText::new(format!("v{}", version::VERSION)).weak());
+                        ui.separator();
+                        if ui.button("Exit and stop client").clicked() {
+                            action = Some(MenuAction::Exit);
+                            ui.close();
+                        }
+                    });
+                    ui.menu_button("Edit", |ui| {
+                        if ui
+                            .add_enabled(!self.search.is_empty(), egui::Button::new("Clear Search"))
+                            .clicked()
+                        {
+                            action = Some(MenuAction::ClearSearch);
+                            ui.close();
+                        }
+                        ui.add_enabled(false, egui::Button::new("Settings…"));
+                    });
+                    ui.menu_button("View", |ui| {
+                        if ui
+                            .add_enabled(
+                                connected,
+                                egui::Button::new("Show Sidebar").selected(self.show_sidebar),
+                            )
+                            .clicked()
+                        {
+                            action = Some(MenuAction::ToggleSidebar);
+                            ui.close();
+                        }
+                        if ui
+                            .add_enabled(
+                                connected,
+                                egui::Button::new("Show Inspector").selected(self.show_inspector),
+                            )
+                            .clicked()
+                        {
+                            action = Some(MenuAction::ToggleInspector);
+                            ui.close();
+                        }
+                        ui.separator();
+                        if ui
+                            .add_enabled(
+                                connected,
+                                egui::Button::new("Grid View").selected(self.grid_view),
+                            )
+                            .clicked()
+                        {
+                            action = Some(MenuAction::GridView);
+                            ui.close();
+                        }
+                        if ui
+                            .add_enabled(
+                                connected,
+                                egui::Button::new("List View").selected(!self.grid_view),
+                            )
+                            .clicked()
+                        {
+                            action = Some(MenuAction::ListView);
+                            ui.close();
+                        }
+                    });
+                    ui.menu_button("Server", |ui| {
+                        if ui
+                            .add_enabled(connected, egui::Button::new("Login…"))
+                            .clicked()
+                        {
+                            action = Some(MenuAction::Login);
+                            ui.close();
+                        }
+                        if ui
+                            .add_enabled(connected, egui::Button::new("Change Password…"))
+                            .clicked()
+                        {
+                            action = Some(MenuAction::ChangePassword);
+                            ui.close();
+                        }
+                        if ui
+                            .add_enabled(connected, egui::Button::new("Server Info…"))
+                            .clicked()
+                        {
+                            action = Some(MenuAction::ServerInfo);
+                            ui.close();
+                        }
+                        if ui
+                            .add_enabled(connected, egui::Button::new("Change EndpointId…"))
+                            .clicked()
+                        {
+                            action = Some(MenuAction::ChangeEndpoint);
+                            ui.close();
+                        }
+                        ui.separator();
+                        if ui
+                            .add_enabled(!self.busy, egui::Button::new("Reconnect"))
+                            .clicked()
+                        {
+                            action = Some(MenuAction::Reconnect);
+                            ui.close();
+                        }
+                        if ui
+                            .add_enabled(connected, egui::Button::new("Refresh Status"))
+                            .clicked()
+                        {
+                            action = Some(MenuAction::Refresh);
+                            ui.close();
+                        }
+                    });
+                    ui.menu_button("Help", |ui| {
+                        if ui.button("About aiqiezi").clicked() {
+                            action = Some(MenuAction::About);
+                            ui.close();
+                        }
+                    });
                 });
             });
-            ui.add_space(6.0);
-        });
+
+        action
+    }
+
+    fn draw_toolbar(&mut self, ui: &mut egui::Ui) -> Option<Command> {
+        let mut pending = None;
+        egui::Panel::top("toolbar")
+            .exact_size(42.0)
+            .frame(
+                egui::Frame::NONE
+                    .fill(theme::CHROME)
+                    .inner_margin(egui::Margin::symmetric(10, 4))
+                    .stroke(egui::Stroke::new(1.0, theme::BORDER)),
+            )
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    if ui.button("Sidebar").clicked() {
+                        self.show_sidebar = !self.show_sidebar;
+                    }
+                    if ui.button("Inspector").clicked() {
+                        self.show_inspector = !self.show_inspector;
+                    }
+                    ui.add_enabled(false, egui::Button::new("Back"));
+                    ui.add_enabled(false, egui::Button::new("Forward"));
+                    ui.add_space(12.0);
+                    ui.add(
+                        egui::TextEdit::singleline(&mut self.search)
+                            .hint_text("Search photos and videos")
+                            .desired_width(360.0),
+                    );
+                    if ui.button("Refresh").clicked() {
+                        pending = Some(Command::Status);
+                    }
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.label(
+                            RichText::new(match self.connection {
+                                ConnectionState::Running => "Connected",
+                                ConnectionState::Starting => "Starting…",
+                                ConnectionState::NeedsServer => "Setup required",
+                                ConnectionState::Error => "Offline",
+                            })
+                            .color(match self.connection {
+                                ConnectionState::Running => theme::SUCCESS,
+                                ConnectionState::Starting => theme::CAUTION,
+                                ConnectionState::NeedsServer => theme::CAUTION,
+                                ConnectionState::Error => theme::ERROR,
+                            }),
+                        );
+                    });
+                });
+            });
         pending
     }
 
-    fn draw_status(&self, ui: &mut egui::Ui) {
-        match &self.connection {
-            ConnectionState::NeedsServer => {
-                ui.label(
-                    RichText::new("Server setup required")
-                        .color(WARN_COLOR)
-                        .strong(),
+    fn draw_sidebar(&mut self, ui: &mut egui::Ui) -> Option<Command> {
+        let pending = None;
+        egui::Frame::NONE
+            .fill(theme::CHROME)
+            .stroke(egui::Stroke::new(1.0, theme::BORDER))
+            .show(ui, |ui| {
+                ui.add_space(10.0);
+                ui.heading("Library");
+                ui.label(RichText::new("0 photos · 0 videos").color(theme::TEXT_DIM));
+                ui.add_space(8.0);
+
+                self.nav_section(
+                    ui,
+                    "LIBRARY",
+                    &[
+                        NavItem::AllPhotos,
+                        NavItem::Videos,
+                        NavItem::RecentlyAdded,
+                        NavItem::Favorites,
+                    ],
                 );
-            }
-            ConnectionState::Starting => {
-                ui.horizontal(|ui| {
-                    ui.spinner();
-                    ui.label("Starting the local client daemon...");
-                });
-            }
-            ConnectionState::Error(error) => {
-                ui.label(
-                    RichText::new("Client daemon is not available")
-                        .color(ERROR_COLOR)
-                        .strong(),
+                ui.add_space(8.0);
+                self.nav_section(
+                    ui,
+                    "COLLECTIONS",
+                    &[NavItem::Albums, NavItem::Folders, NavItem::Tags],
                 );
-                if let Some(config_error) = &self.config_error {
-                    ui.label(RichText::new(config_error).color(ERROR_COLOR));
-                } else {
-                    ui.label(RichText::new(error).color(ERROR_COLOR));
-                    ui.label("Use Refresh or start the daemon from the controls below.");
+                ui.add_space(8.0);
+                self.nav_section(ui, "TRASH", &[NavItem::RecentlyDeleted]);
+
+                if let Some(message) = &self.message {
+                    ui.add_space(12.0);
+                    ui.label(RichText::new(&message.text).color(if message.error {
+                        theme::ERROR
+                    } else {
+                        theme::SUCCESS
+                    }));
                 }
-            }
-            ConnectionState::Running(status) => {
-                ui.label(
-                    RichText::new("Client daemon connected")
-                        .color(OK_COLOR)
-                        .strong(),
-                );
-                egui::Grid::new("status_grid")
-                    .num_columns(2)
-                    .spacing([12.0, 6.0])
-                    .show(ui, |ui| {
-                        ui.label("Client EndpointId");
-                        ui.monospace(&status.client_id);
-                        ui.end_row();
+            });
+        pending
+    }
 
-                        ui.label("Server EndpointId");
-                        match &status.server_id {
-                            Some(server_id) => ui.monospace(server_id),
-                            None => ui.label(RichText::new("not configured").color(WARN_COLOR)),
-                        };
-                        ui.end_row();
-
-                        ui.label("Local socket");
-                        ui.monospace(&status.socket);
-                        ui.end_row();
-
-                        ui.label("Version");
-                        ui.monospace(&status.version);
-                        ui.end_row();
-                    });
+    fn nav_section(&mut self, ui: &mut egui::Ui, title: &str, items: &[NavItem]) {
+        ui.label(RichText::new(title).small().color(theme::TEXT_DIM));
+        for item in items {
+            let selected = self.nav == *item;
+            let button = egui::Button::new(format!("  {}", item.label()))
+                .frame(false)
+                .selected(selected);
+            if ui.add_sized([ui.available_width(), 26.0], button).clicked() {
+                self.nav = *item;
             }
         }
+    }
+
+    fn draw_workspace(&mut self, ui: &mut egui::Ui) {
+        ui.add_space(10.0);
+        ui.horizontal(|ui| {
+            ui.heading(self.nav.label());
+            ui.label(RichText::new("0 items").color(theme::TEXT_DIM));
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui.selectable_label(!self.grid_view, "List").clicked() {
+                    self.grid_view = false;
+                }
+                if ui.selectable_label(self.grid_view, "Grid").clicked() {
+                    self.grid_view = true;
+                }
+            });
+        });
+        ui.add_space(6.0);
+        ui.separator();
+
+        let height = ui.available_height();
+        ui.allocate_ui_with_layout(
+            egui::vec2(ui.available_width(), height),
+            egui::Layout::top_down(egui::Align::Center),
+            |ui| {
+                ui.add_space((height * 0.22).max(40.0));
+                ui.label(RichText::new("No photos or videos yet").size(20.0));
+                ui.add_space(6.0);
+                ui.label(
+                    RichText::new("Import and upload support is coming in a later milestone.")
+                        .color(theme::TEXT_DIM),
+                );
+                if !self.search.is_empty() {
+                    ui.add_space(10.0);
+                    ui.label(
+                        RichText::new(format!("Search: {}", self.search)).color(theme::TEXT_DIM),
+                    );
+                }
+            },
+        );
+    }
+
+    fn draw_inspector(&mut self, ui: &mut egui::Ui) -> Option<Command> {
+        let mut pending = None;
+        egui::Frame::NONE
+            .fill(theme::CHROME)
+            .stroke(egui::Stroke::new(1.0, theme::BORDER))
+            .show(ui, |ui| {
+                ui.add_space(10.0);
+                ui.horizontal(|ui| {
+                    if ui
+                        .selectable_label(self.inspector_tab == InspectorTab::Info, "Info")
+                        .clicked()
+                    {
+                        self.inspector_tab = InspectorTab::Info;
+                    }
+                    if ui
+                        .selectable_label(self.inspector_tab == InspectorTab::Server, "Server")
+                        .clicked()
+                    {
+                        self.inspector_tab = InspectorTab::Server;
+                    }
+                });
+                ui.separator();
+
+                match self.inspector_tab {
+                    InspectorTab::Info => {
+                        ui.add_space(12.0);
+                        ui.label(
+                            RichText::new("No photo or video selected").color(theme::TEXT_DIM),
+                        );
+                        ui.label("Select an item to see its details.");
+                    }
+                    InspectorTab::Server => {
+                        if let Some(status) = &self.status {
+                            ui.add_space(8.0);
+                            egui::Grid::new("server_info_grid")
+                                .num_columns(2)
+                                .spacing([10.0, 8.0])
+                                .show(ui, |ui| {
+                                    ui.label("Client");
+                                    ui.add(
+                                        egui::Label::new(
+                                            RichText::new(short_id(&status.client_id)).monospace(),
+                                        )
+                                        .wrap(),
+                                    );
+                                    ui.end_row();
+                                    ui.label("Server");
+                                    match &status.server_id {
+                                        Some(id) => {
+                                            ui.add(
+                                                egui::Label::new(
+                                                    RichText::new(short_id(id)).monospace(),
+                                                )
+                                                .wrap(),
+                                            );
+                                        }
+                                        None => {
+                                            ui.label(
+                                                RichText::new("not configured")
+                                                    .color(theme::CAUTION),
+                                            );
+                                        }
+                                    }
+                                    ui.end_row();
+                                    ui.label("Socket");
+                                    ui.add(
+                                        egui::Label::new(RichText::new(&status.socket).monospace())
+                                            .wrap(),
+                                    );
+                                    ui.end_row();
+                                    ui.label("Version");
+                                    ui.monospace(&status.version);
+                                    ui.end_row();
+                                });
+                        }
+                        ui.add_space(12.0);
+                        if ui.button("Login…").clicked() {
+                            self.login_open = true;
+                        }
+                        if ui.button("Change Password…").clicked() {
+                            self.change_password_open = true;
+                        }
+                        if ui.button("Server Info…").clicked() {
+                            pending = Some(Command::ServerInfo);
+                        }
+                        if ui.button("Change EndpointId…").clicked() {
+                            if let Some(status) = &self.status {
+                                self.server_id_input = status.server_id.clone().unwrap_or_default();
+                            }
+                            self.endpoint_open = true;
+                        }
+                        if ui.button("Reconnect").clicked() {
+                            self.connection = ConnectionState::Starting;
+                            pending = Some(Command::EnsureDaemon { endpoint_id: None });
+                        }
+                    }
+                }
+                if let Some(message) = &self.message {
+                    ui.add_space(10.0);
+                    ui.label(RichText::new(&message.text).color(if message.error {
+                        theme::ERROR
+                    } else {
+                        theme::SUCCESS
+                    }));
+                }
+            });
+        pending
+    }
+
+    fn draw_status_bar(&self, ui: &mut egui::Ui) {
+        egui::Panel::bottom("status_bar")
+            .exact_size(28.0)
+            .frame(
+                egui::Frame::NONE
+                    .fill(theme::CHROME)
+                    .inner_margin(egui::Margin::symmetric(10, 4))
+                    .stroke(egui::Stroke::new(1.0, theme::BORDER)),
+            )
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    let color = match self.connection {
+                        ConnectionState::Running => theme::SUCCESS,
+                        ConnectionState::Starting => theme::CAUTION,
+                        ConnectionState::NeedsServer => theme::CAUTION,
+                        ConnectionState::Error => theme::ERROR,
+                    };
+                    ui.painter().circle_filled(
+                        ui.cursor().left_top() + egui::vec2(4.0, 7.0),
+                        4.0,
+                        color,
+                    );
+                    ui.add_space(12.0);
+                    ui.label(match self.connection {
+                        ConnectionState::Running => "Client connected",
+                        ConnectionState::Starting => "Starting client daemon…",
+                        ConnectionState::NeedsServer => "Server setup required",
+                        ConnectionState::Error => "Client daemon unavailable",
+                    });
+                    ui.label(RichText::new("0 items").color(theme::TEXT_DIM));
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.label(format!("v{}", version::VERSION));
+                        if let Some(status) = &self.status {
+                            if let Some(server_id) = &status.server_id {
+                                ui.label(
+                                    RichText::new(short_id(server_id))
+                                        .monospace()
+                                        .color(theme::TEXT_DIM),
+                                );
+                            }
+                        }
+                    });
+                });
+            });
     }
 
     fn draw_setup(&mut self, ui: &mut egui::Ui) -> Option<Command> {
         let mut pending = None;
-        ui.add_space(12.0);
-        ui.heading("Connect to aiqiezi-server");
-        ui.label(
-            "Enter the aiqiezi-server EndpointId. The GUI will start the local client \
-             daemon after saving it.",
+        let width = ui.available_width().min(620.0);
+        ui.allocate_ui_with_layout(
+            egui::vec2(ui.available_width(), ui.available_height()),
+            egui::Layout::top_down(egui::Align::Center),
+            |ui| {
+                ui.add_space((ui.available_height() * 0.18).max(40.0));
+                ui.allocate_ui_with_layout(
+                    egui::vec2(width, 0.0),
+                    egui::Layout::top_down(egui::Align::LEFT),
+                    |ui| {
+                        ui.heading("Connect to aiqiezi-server");
+                        ui.label(
+                            "Enter the aiqiezi-server EndpointId. The GUI will start the local \
+                             client daemon after saving it.",
+                        );
+                        ui.add_space(8.0);
+                        ui.label("Get it on the server host with:");
+                        ui.monospace("aiqiezi-server whoami");
+                        ui.add_space(12.0);
+                        ui.label("Server EndpointId");
+                        ui.add(
+                            egui::TextEdit::singleline(&mut self.server_id_input)
+                                .desired_width(width)
+                                .hint_text("server EndpointId"),
+                        );
+                        ui.add_space(8.0);
+                        if ui
+                            .add_enabled(
+                                !self.busy && !self.server_id_input.trim().is_empty(),
+                                egui::Button::new("Save and start client"),
+                            )
+                            .clicked()
+                        {
+                            match self.server_id_input.trim().parse::<EndpointId>() {
+                                Ok(endpoint_id) => {
+                                    self.message = None;
+                                    self.connection = ConnectionState::Starting;
+                                    pending = Some(Command::EnsureDaemon {
+                                        endpoint_id: Some(endpoint_id.to_string()),
+                                    });
+                                }
+                                Err(error) => {
+                                    self.message = Some(Message {
+                                        text: format!("invalid aiqiezi-server EndpointId: {error}"),
+                                        error: true,
+                                    });
+                                }
+                            }
+                        }
+                        if let Some(message) = &self.message {
+                            ui.add_space(10.0);
+                            ui.label(RichText::new(&message.text).color(if message.error {
+                                theme::ERROR
+                            } else {
+                                theme::SUCCESS
+                            }));
+                        }
+                    },
+                );
+            },
         );
-        ui.add_space(6.0);
-        ui.label("Get it on the server host with:");
-        ui.monospace("aiqiezi-server whoami");
-        ui.add_space(8.0);
+        pending
+    }
 
-        ui.horizontal(|ui| {
-            ui.label("Server EndpointId");
-            ui.add(
-                egui::TextEdit::singleline(&mut self.server_id_input)
-                    .desired_width(560.0)
-                    .hint_text("server EndpointId"),
-            );
-            if ui
-                .add_enabled(
-                    !self.busy && !self.server_id_input.trim().is_empty(),
-                    egui::Button::new("Save and start client"),
-                )
-                .clicked()
-            {
-                match self.server_id_input.trim().parse::<EndpointId>() {
-                    Ok(endpoint_id) => {
-                        self.message = None;
-                        self.connection = ConnectionState::Starting;
-                        pending = Some(Command::EnsureDaemon {
-                            endpoint_id: Some(endpoint_id.to_string()),
-                        });
-                    }
-                    Err(error) => {
-                        self.message = Some(Message {
-                            text: format!("invalid aiqiezi-server EndpointId: {error}"),
-                            error: true,
-                        });
-                    }
-                }
-            }
-            if self.busy {
+    fn draw_starting(&self, ui: &mut egui::Ui) {
+        ui.allocate_ui_with_layout(
+            egui::vec2(ui.available_width(), ui.available_height()),
+            egui::Layout::top_down(egui::Align::Center),
+            |ui| {
+                ui.add_space((ui.available_height() * 0.35).max(60.0));
                 ui.spinner();
-            }
-        });
+                ui.add_space(8.0);
+                ui.label("Starting the local client daemon…");
+            },
+        );
+    }
 
-        if let Some(message) = &self.message {
-            ui.add_space(8.0);
-            ui.label(RichText::new(&message.text).color(if message.error {
-                ERROR_COLOR
-            } else {
-                OK_COLOR
-            }));
+    fn draw_error(&mut self, ui: &mut egui::Ui) -> Option<Command> {
+        let mut pending = None;
+        ui.allocate_ui_with_layout(
+            egui::vec2(ui.available_width(), ui.available_height()),
+            egui::Layout::top_down(egui::Align::Center),
+            |ui| {
+                ui.add_space((ui.available_height() * 0.3).max(50.0));
+                ui.label(
+                    RichText::new("Client daemon is not available")
+                        .color(theme::ERROR)
+                        .size(18.0),
+                );
+                if let Some(error) = &self.connection_error {
+                    ui.label(RichText::new(error).color(theme::ERROR));
+                }
+                if let Some(error) = &self.config_error {
+                    ui.label(RichText::new(error).color(theme::ERROR));
+                }
+                ui.add_space(10.0);
+                if ui
+                    .add_enabled(
+                        self.worker.is_some() && !self.busy,
+                        egui::Button::new("Retry"),
+                    )
+                    .clicked()
+                {
+                    self.connection = ConnectionState::Starting;
+                    pending = Some(Command::EnsureDaemon { endpoint_id: None });
+                }
+                if let Some(message) = &self.message {
+                    ui.add_space(8.0);
+                    ui.label(RichText::new(&message.text).color(if message.error {
+                        theme::ERROR
+                    } else {
+                        theme::SUCCESS
+                    }));
+                }
+            },
+        );
+        pending
+    }
+
+    fn draw_dialogs(&mut self, ctx: &egui::Context) -> Option<Command> {
+        let mut pending = None;
+
+        if self.login_open {
+            let mut open = self.login_open;
+            egui::Window::new("Login")
+                .collapsible(false)
+                .resizable(false)
+                .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+                .open(&mut open)
+                .show(ctx, |ui| {
+                    ui.label("Server password");
+                    ui.add(
+                        egui::TextEdit::singleline(&mut self.login_password)
+                            .password(true)
+                            .desired_width(300.0),
+                    );
+                    ui.add_space(8.0);
+                    ui.horizontal(|ui| {
+                        if ui
+                            .add_enabled(
+                                !self.busy && !self.login_password.is_empty(),
+                                egui::Button::new("Login"),
+                            )
+                            .clicked()
+                        {
+                            pending = Some(Command::Login(self.login_password.clone()));
+                        }
+                        if ui.button("Cancel").clicked() {
+                            self.login_open = false;
+                            self.login_password.clear();
+                        }
+                    });
+                    if let Some(message) = &self.message {
+                        ui.add_space(8.0);
+                        ui.label(RichText::new(&message.text).color(if message.error {
+                            theme::ERROR
+                        } else {
+                            theme::SUCCESS
+                        }));
+                    }
+                });
+            self.login_open = self.login_open && open;
+        }
+
+        if self.change_password_open {
+            let mut open = self.change_password_open;
+            egui::Window::new("Change Password")
+                .collapsible(false)
+                .resizable(false)
+                .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+                .open(&mut open)
+                .show(ctx, |ui| {
+                    egui::Grid::new("password_dialog_grid")
+                        .num_columns(2)
+                        .spacing([10.0, 8.0])
+                        .show(ui, |ui| {
+                            ui.label("Current");
+                            ui.add(
+                                egui::TextEdit::singleline(&mut self.old_password)
+                                    .password(true)
+                                    .desired_width(280.0),
+                            );
+                            ui.end_row();
+                            ui.label("New");
+                            ui.add(
+                                egui::TextEdit::singleline(&mut self.new_password)
+                                    .password(true)
+                                    .desired_width(280.0),
+                            );
+                            ui.end_row();
+                            ui.label("Confirm");
+                            ui.add(
+                                egui::TextEdit::singleline(&mut self.confirm_password)
+                                    .password(true)
+                                    .desired_width(280.0),
+                            );
+                            ui.end_row();
+                        });
+                    ui.add_space(8.0);
+                    ui.horizontal(|ui| {
+                        if ui
+                            .add_enabled(
+                                !self.busy
+                                    && !self.old_password.is_empty()
+                                    && !self.new_password.is_empty()
+                                    && !self.confirm_password.is_empty(),
+                                egui::Button::new("Change"),
+                            )
+                            .clicked()
+                        {
+                            if self.new_password != self.confirm_password {
+                                self.message = Some(Message {
+                                    text: "new passwords do not match".to_string(),
+                                    error: true,
+                                });
+                            } else {
+                                pending = Some(Command::ChangePassword {
+                                    old: self.old_password.clone(),
+                                    new: self.new_password.clone(),
+                                });
+                            }
+                        }
+                        if ui.button("Cancel").clicked() {
+                            self.change_password_open = false;
+                            self.clear_password_fields();
+                        }
+                    });
+                    if let Some(message) = &self.message {
+                        ui.add_space(8.0);
+                        ui.label(RichText::new(&message.text).color(if message.error {
+                            theme::ERROR
+                        } else {
+                            theme::SUCCESS
+                        }));
+                    }
+                });
+            self.change_password_open = self.change_password_open && open;
+        }
+
+        if self.endpoint_open {
+            let mut open = self.endpoint_open;
+            egui::Window::new("Change Server EndpointId")
+                .collapsible(false)
+                .resizable(false)
+                .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+                .open(&mut open)
+                .show(ctx, |ui| {
+                    ui.label("aiqiezi-server EndpointId");
+                    ui.add(
+                        egui::TextEdit::singleline(&mut self.server_id_input)
+                            .desired_width(440.0)
+                            .hint_text("server EndpointId"),
+                    );
+                    ui.add_space(8.0);
+                    if ui
+                        .add_enabled(
+                            !self.busy && !self.server_id_input.trim().is_empty(),
+                            egui::Button::new("Save"),
+                        )
+                        .clicked()
+                    {
+                        pending = Some(Command::SetServer(self.server_id_input.trim().to_string()));
+                    }
+                    if let Some(message) = &self.message {
+                        ui.add_space(8.0);
+                        ui.label(RichText::new(&message.text).color(if message.error {
+                            theme::ERROR
+                        } else {
+                            theme::SUCCESS
+                        }));
+                    }
+                });
+            self.endpoint_open = self.endpoint_open && open;
+        }
+
+        if self.server_info_open {
+            let mut open = self.server_info_open;
+            egui::Window::new("Server Info")
+                .collapsible(false)
+                .resizable(true)
+                .default_width(640.0)
+                .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+                .open(&mut open)
+                .show(ctx, |ui| {
+                    egui::ScrollArea::vertical()
+                        .max_height(420.0)
+                        .show(ui, |ui| {
+                            if let Some(info) = &self.server_info {
+                                if let Ok(text) = serde_json::to_string_pretty(info) {
+                                    ui.monospace(text);
+                                }
+                            } else {
+                                ui.label("No server information received.");
+                            }
+                        });
+                });
+            self.server_info_open = self.server_info_open && open;
+        }
+
+        if self.about_open {
+            let mut open = self.about_open;
+            egui::Window::new("About aiqiezi")
+                .collapsible(false)
+                .resizable(false)
+                .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+                .open(&mut open)
+                .show(ctx, |ui| {
+                    ui.heading("aiqiezi");
+                    ui.label("Self-hosted photo and video archive.");
+                    ui.label(format!("Version {}", version::VERSION));
+                    ui.label("AGPL-3.0");
+                    ui.hyperlink_to("Documentation", "https://github.com/gocpicnic/aiqiezi-gui");
+                });
+            self.about_open = self.about_open && open;
         }
 
         pending
     }
 
-    fn draw_controls(&mut self, ui: &mut egui::Ui) -> Option<Command> {
-        if matches!(self.connection, ConnectionState::NeedsServer) {
-            return self.draw_setup(ui);
-        }
-
-        if matches!(self.connection, ConnectionState::Starting) {
-            return None;
-        }
-
-        let connected = matches!(self.connection, ConnectionState::Running(_));
-        let mut pending = None;
-
-        ui.add_space(12.0);
-        ui.horizontal(|ui| {
-            if ui
-                .add_enabled(
-                    self.worker.is_some() && !self.busy,
-                    egui::Button::new("Refresh"),
-                )
-                .clicked()
-            {
-                pending = Some(Command::Status);
-            }
-            if ui
-                .add_enabled(
-                    self.worker.is_some() && !self.busy && !self.setup_required && !connected,
-                    egui::Button::new("Start client daemon"),
-                )
-                .clicked()
-            {
-                pending = Some(Command::EnsureDaemon { endpoint_id: None });
-            }
-            if ui
-                .add_enabled(connected && !self.busy, egui::Button::new("Server info"))
-                .clicked()
-            {
-                pending = Some(Command::ServerInfo);
-            }
-            if self.busy {
-                ui.spinner();
-            }
-        });
-
-        if !connected {
-            if let Some(message) = &self.message {
-                ui.add_space(8.0);
-                ui.label(RichText::new(&message.text).color(if message.error {
-                    ERROR_COLOR
-                } else {
-                    OK_COLOR
-                }));
-            }
-            return pending;
-        }
-
-        ui.separator();
-        ui.heading("Server");
-        ui.horizontal(|ui| {
-            ui.label("EndpointId");
-            ui.add(
-                egui::TextEdit::singleline(&mut self.server_id_input)
-                    .desired_width(560.0)
-                    .hint_text("aiqiezi-server EndpointId"),
-            );
-            if ui
-                .add_enabled(
-                    !self.busy && !self.server_id_input.trim().is_empty(),
-                    egui::Button::new("Save"),
-                )
-                .clicked()
-            {
-                pending = Some(Command::SetServer(self.server_id_input.trim().to_string()));
-            }
-        });
-
-        ui.separator();
-        ui.heading("Login");
-        ui.horizontal(|ui| {
-            ui.label("Password");
-            ui.add(
-                egui::TextEdit::singleline(&mut self.password)
-                    .password(true)
-                    .desired_width(320.0),
-            );
-            if ui
-                .add_enabled(
-                    !self.busy && !self.password.is_empty(),
-                    egui::Button::new("Login"),
-                )
-                .clicked()
-            {
-                pending = Some(Command::Login(self.password.clone()));
-            }
-        });
-        ui.label(
-            RichText::new(
-                "The first login requires the bootstrap password, then a password change.",
-            )
-            .weak(),
-        );
-
-        ui.separator();
-        ui.heading("Change password");
-        egui::Grid::new("change_password_grid")
-            .num_columns(2)
-            .spacing([12.0, 6.0])
-            .show(ui, |ui| {
-                ui.label("Current password");
-                ui.add(
-                    egui::TextEdit::singleline(&mut self.old_password)
-                        .password(true)
-                        .desired_width(320.0),
-                );
-                ui.end_row();
-
-                ui.label("New password");
-                ui.add(
-                    egui::TextEdit::singleline(&mut self.new_password)
-                        .password(true)
-                        .desired_width(320.0),
-                );
-                ui.end_row();
-
-                ui.label("Confirm new password");
-                ui.add(
-                    egui::TextEdit::singleline(&mut self.confirm_password)
-                        .password(true)
-                        .desired_width(320.0),
-                );
-                ui.end_row();
-            });
-
-        if ui
-            .add_enabled(
-                !self.busy
-                    && !self.old_password.is_empty()
-                    && !self.new_password.is_empty()
-                    && !self.confirm_password.is_empty(),
-                egui::Button::new("Change password"),
-            )
-            .clicked()
-        {
-            if self.new_password != self.confirm_password {
-                self.message = Some(Message {
-                    text: "new passwords do not match".to_string(),
-                    error: true,
-                });
-            } else {
-                pending = Some(Command::ChangePassword {
-                    old: self.old_password.clone(),
-                    new: self.new_password.clone(),
-                });
-            }
-        }
-
-        if let Some(message) = &self.message {
-            ui.add_space(8.0);
-            ui.label(RichText::new(&message.text).color(if message.error {
-                ERROR_COLOR
-            } else {
-                OK_COLOR
-            }));
-        }
-
-        if let Some(info) = &self.server_info {
-            ui.separator();
-            ui.heading("server-info");
-            egui::ScrollArea::vertical()
-                .max_height(240.0)
-                .show(ui, |ui| {
-                    if let Ok(text) = serde_json::to_string_pretty(info) {
-                        ui.monospace(text);
-                    }
-                });
-        }
-
-        pending
+    fn clear_password_fields(&mut self) {
+        self.old_password.clear();
+        self.new_password.clear();
+        self.confirm_password.clear();
     }
 }
 
@@ -638,23 +1184,65 @@ impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         self.poll_events();
 
-        if Instant::now() < self.splash_until {
-            self.draw_splash(ui);
-            ui.ctx().request_repaint_after(Duration::from_millis(16));
-            return;
+        let mut pending = None;
+        if let Some(action) = self.draw_menu_bar(ui) {
+            pending = self.handle_menu_action(action);
         }
 
-        let mut pending = self.draw_header(ui);
+        if self.connection == ConnectionState::Running {
+            if let Some(command) = self.draw_toolbar(ui) {
+                pending = Some(command);
+            }
+            self.draw_status_bar(ui);
+            if self.show_sidebar {
+                egui::Panel::left("library_sidebar")
+                    .resizable(true)
+                    .default_size(230.0)
+                    .size_range(180.0..=360.0)
+                    .frame(egui::Frame::NONE.fill(theme::CHROME))
+                    .show(ui, |ui| {
+                        if let Some(command) = self.draw_sidebar(ui) {
+                            pending = Some(command);
+                        }
+                    });
+            }
+            if self.show_inspector {
+                egui::Panel::right("inspector_sidebar")
+                    .resizable(true)
+                    .default_size(300.0)
+                    .size_range(240.0..=440.0)
+                    .frame(egui::Frame::NONE.fill(theme::CHROME))
+                    .show(ui, |ui| {
+                        if let Some(command) = self.draw_inspector(ui) {
+                            pending = Some(command);
+                        }
+                    });
+            }
+            egui::CentralPanel::default()
+                .frame(egui::Frame::NONE.fill(theme::CANVAS))
+                .show(ui, |ui| self.draw_workspace(ui));
+        } else {
+            egui::CentralPanel::default()
+                .frame(egui::Frame::NONE.fill(theme::CANVAS))
+                .show(ui, |ui| {
+                    let command = match self.connection {
+                        ConnectionState::NeedsServer => self.draw_setup(ui),
+                        ConnectionState::Starting => {
+                            self.draw_starting(ui);
+                            None
+                        }
+                        ConnectionState::Error => self.draw_error(ui),
+                        ConnectionState::Running => None,
+                    };
+                    if command.is_some() {
+                        pending = command;
+                    }
+                });
+        }
 
-        egui::CentralPanel::default().show(ui, |ui| {
-            egui::ScrollArea::vertical().show(ui, |ui| {
-                self.draw_status(ui);
-                ui.add_space(12.0);
-                if let Some(command) = self.draw_controls(ui) {
-                    pending = Some(command);
-                }
-            });
-        });
+        if let Some(command) = self.draw_dialogs(ui.ctx()) {
+            pending = Some(command);
+        }
 
         if let Some(command) = pending {
             self.send(command);
@@ -663,10 +1251,17 @@ impl eframe::App for App {
         if self.close_requested {
             ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
         }
-
         if self.busy {
             ui.ctx().request_repaint_after(Duration::from_millis(100));
         }
+    }
+}
+
+fn short_id(id: &str) -> String {
+    if id.len() > 20 {
+        format!("{}…{}", &id[..10], &id[id.len() - 6..])
+    } else {
+        id.to_string()
     }
 }
 

@@ -112,6 +112,7 @@ aiqiezi-gui/
 │   ├── daemon_process.rs
 │   ├── logo.rs
 │   ├── logging.rs
+│   ├── theme.rs
 │   ├── version.rs
 │   └── worker.rs
 ├── docs/
@@ -128,13 +129,21 @@ aiqiezi-gui/
 - Channels between async workers and the UI thread.
 - `aiqiezi-client` from GitHub, pinned to a CLI revision, for all local socket
   and backend communication.
-- `image` with PNG support for the embedded startup logo.
+- `image` with PNG support for the embedded window icon.
 - egui's embedded fonts: Ubuntu-Light for proportional text and Hack for
   monospace text. No custom font is bundled at this phase.
 - `tracing` for structured logs.
 
 ## UI rules
 
+- Follow the LightCraft-style workspace: menu bar, toolbar, left library sidebar,
+  central asset grid, right inspector, and bottom status bar.
+- Use a charcoal dark theme and the blue accent token; do not add a logo to the
+  workspace.
+- Use resizable fixed panels. Do not add a full docking dependency without an
+  explicit decision.
+- Use FilmCraft only as a reference for video playback; do not copy its editing
+  workspace or add it as a dependency.
 - Never block the egui render thread on network or disk I/O.
 - Use virtualized lists for large collections.
 - Paginate API requests.
@@ -143,17 +152,16 @@ aiqiezi-gui/
 - Keep destructive actions behind confirmation dialogs.
 - Do not load all assets or all thumbnails at once.
 
-## Branding and splash
+## Branding and icons
 
 - Keep branding assets under `assets/`.
 - Embed the PNG at compile time; do not depend on files beside the executable at
   runtime.
-- Use the PNG for the startup splash and runtime window/taskbar icon.
+- Use the PNG only for the runtime window/taskbar icon.
 - Embed the ICO into Windows executables with `build.rs`; keep the Linux/macOS
   builds independent of the Windows resource compiler.
-- The splash is presentation-only and must not block daemon startup, worker
-  events, or the normal setup/login state.
-- The splash appears once for 1.5 seconds at process startup.
+- Do not show a startup splash, logo, or wordmark in the main workspace. Follow
+  the LightCraft-style chrome-only shell.
 - Do not add a second HTTP or asset-loading service for branding.
 
 ## Typography

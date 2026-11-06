@@ -12,18 +12,17 @@ login and server administration.
 
 First connection and authentication milestone implemented:
 
-- native `eframe`/`egui` window;
-- branded startup splash and window icon;
+- native `eframe`/`egui` window with app/window icon;
+- LightCraft-inspired dark workspace: menu bar, toolbar, sidebar,
+  asset-grid canvas, inspector, and status bar;
 - automatic local client daemon startup;
-- first-run server EndpointId setup form;
-- connection to the local client daemon over the shared local socket;
-- client and server EndpointId display;
-- server EndpointId configuration;
-- login and password change forms;
-- server-info request;
+- first-run server EndpointId setup;
+- login, password change, server-info, and EndpointId dialogs;
 - background Tokio worker with UI event channels;
 - window close leaves the daemon running;
-- explicit Exit button stops the daemon and exits.
+- **File → Exit and stop client** stops the daemon and exits.
+
+There is no startup splash and no logo or wordmark inside the workspace.
 
 Asset browsing, thumbnails, search, and video playback remain deferred.
 
@@ -106,13 +105,13 @@ create a second iroh endpoint.
 Branding files live in `assets/`:
 
 ```text
-assets/aiqiezi.png   # splash and runtime window icon
+assets/aiqiezi.png   # runtime window icon
 assets/aiqiezi.ico   # Windows executable icon
 ```
 
-The PNG is embedded in the binary and shown for 1.5 seconds during startup while
-the daemon is initialized. The ICO is embedded into Windows executables through
-`build.rs`; the PNG is used for the runtime window/taskbar icon on all platforms.
+The PNG is embedded in the binary as the runtime window/taskbar icon. The ICO
+is embedded into Windows executables through `build.rs`; it is not shown inside
+the application.
 
 ## Typography
 
@@ -286,7 +285,7 @@ key and the iroh connection.
 ## Documentation
 
 - [AGENTS.md](AGENTS.md): implementation rules for AI coding agents
-- [docs/branding.md](docs/branding.md): branding assets, splash, and font policy
+- [docs/branding.md](docs/branding.md): branding assets, icons, and font policy
 - [docs/video-playback.md](docs/video-playback.md): playback architecture and
   decoder backend trade-offs
 - [aiqiezi-server](https://github.com/gocpicnic/aiqiezi-server): system
