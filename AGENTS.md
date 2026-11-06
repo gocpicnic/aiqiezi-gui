@@ -108,6 +108,8 @@ aiqiezi-gui/
 - `aiqiezi-client` from GitHub, pinned to a CLI revision, for all local socket
   and backend communication.
 - `image` with PNG support for the embedded startup logo.
+- egui's embedded fonts: Ubuntu-Light for proportional text and Hack for
+  monospace text. No custom font is bundled at this phase.
 - `tracing` for structured logs.
 
 ## UI rules
@@ -132,6 +134,16 @@ aiqiezi-gui/
   events, or the normal setup/login state.
 - The splash appears once for 1.5 seconds at process startup.
 - Do not add a second HTTP or asset-loading service for branding.
+
+## Typography
+
+- Use egui's embedded default fonts at this phase.
+- Proportional UI text uses Ubuntu-Light.
+- Monospace text uses Hack.
+- Do not add custom font files without an explicit product decision.
+- If a custom font is approved later, verify its license, embed it in the
+  binary, retain egui fonts as fallbacks, document it in `docs/branding.md`, and
+  test all Tier 1 platforms.
 
 ## Build and bundle
 

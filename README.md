@@ -80,6 +80,18 @@ The PNG is embedded in the binary and shown for 1.5 seconds during startup while
 the daemon is initialized. The ICO is embedded into Windows executables through
 `build.rs`; the PNG is used for the runtime window/taskbar icon on all platforms.
 
+## Typography
+
+The GUI currently uses egui's embedded default fonts only:
+
+- proportional UI text: **Ubuntu-Light**;
+- monospace text: **Hack**.
+
+No custom font files are bundled in this phase. EndpointIds, socket paths, and
+JSON views use the monospace family; headings, labels, buttons, and forms use
+the proportional family. See [docs/branding.md](docs/branding.md) for the asset
+and font policy.
+
 ## Running
 
 Run the GUI from source:
@@ -239,6 +251,7 @@ key and the iroh connection.
 ## Documentation
 
 - [AGENTS.md](AGENTS.md): implementation rules for AI coding agents
+- [docs/branding.md](docs/branding.md): branding assets, splash, and font policy
 - [docs/video-playback.md](docs/video-playback.md): playback architecture and
   decoder backend trade-offs
 - [aiqiezi-server](https://github.com/gocpicnic/aiqiezi-server): system
