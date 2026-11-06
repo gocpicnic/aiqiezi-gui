@@ -54,6 +54,8 @@ Rules:
   Unix-only APIs or shell commands;
 - keep platform-specific blocking work off the UI thread;
 - document any new native dependency and its per-OS build requirement;
+- Windows builds use the Windows SDK resource compiler through `winresource`
+  to embed `assets/aiqiezi.ico`;
 - add ARM64 only after it is explicitly added to the support matrix.
 
 ## Architecture
@@ -79,11 +81,15 @@ It does not own an iroh endpoint and does not create a second client identity.
 aiqiezi-gui/
 ├── Cargo.toml
 ├── Makefile
+├── assets/
+│   ├── aiqiezi.ico
+│   └── aiqiezi.png
 ├── build.rs
 ├── src/
 │   ├── main.rs
 │   ├── app.rs
 │   ├── daemon_process.rs
+│   ├── logo.rs
 │   ├── logging.rs
 │   ├── version.rs
 │   └── worker.rs
@@ -101,7 +107,7 @@ aiqiezi-gui/
 - Channels between async workers and the UI thread.
 - `aiqiezi-client` from GitHub, pinned to a CLI revision, for all local socket
   and backend communication.
-- `image` for local thumbnail decode/cache if needed.
+- `image` with PNG support for the embedded startup logo.
 - `tracing` for structured logs.
 
 ## UI rules
@@ -113,6 +119,19 @@ aiqiezi-gui/
 - Show explicit states: loading, empty, partial, offline, and error.
 - Keep destructive actions behind confirmation dialogs.
 - Do not load all assets or all thumbnails at once.
+
+## Branding and splash
+
+- Keep branding assets under `assets/`.
+- Embed the PNG at compile time; do not depend on files beside the executable at
+  runtime.
+- Use the PNG for the startup splash and runtime window/taskbar icon.
+- Embed the ICO into Windows executables with `build.rs`; keep the Linux/macOS
+  builds independent of the Windows resource compiler.
+- The splash is presentation-only and must not block daemon startup, worker
+  events, or the normal setup/login state.
+- The splash appears once for 1.5 seconds at process startup.
+- Do not add a second HTTP or asset-loading service for branding.
 
 ## Build and bundle
 

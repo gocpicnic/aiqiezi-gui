@@ -5,7 +5,7 @@
   license that can be found in the LICENSE file.
 */
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use aiqiezi_client::aiqiezi_proto::Response;
 use aiqiezi_client::{ClientConfig, EndpointId};
@@ -45,10 +45,17 @@ pub struct App {
     message: Option<Message>,
     server_info: Option<Value>,
     busy: bool,
+    splash_texture: egui::TextureHandle,
+    splash_until: Instant,
 }
 
 impl App {
-    pub fn new(_cc: &eframe::CreationContext<'_>) -> Self {
+    pub fn new(cc: &eframe::CreationContext<'_>, splash_image: egui::ColorImage) -> Self {
+        let splash_texture =
+            cc.egui_ctx
+                .load_texture("aiqiezi-logo", splash_image, egui::TextureOptions::LINEAR);
+        let splash_until = Instant::now() + Duration::from_millis(1500);
+
         match ClientConfig::from_env() {
             Ok(config) => {
                 let setup_required = config.server_id.is_none();
@@ -68,6 +75,8 @@ impl App {
                         message: None,
                         server_info: None,
                         busy: false,
+                        splash_texture: splash_texture.clone(),
+                        splash_until,
                     }
                 } else {
                     worker.send(Command::EnsureDaemon { endpoint_id: None });
@@ -85,6 +94,8 @@ impl App {
                         message: None,
                         server_info: None,
                         busy: true,
+                        splash_texture: splash_texture.clone(),
+                        splash_until,
                     }
                 }
             }
@@ -102,6 +113,8 @@ impl App {
                 message: None,
                 server_info: None,
                 busy: false,
+                splash_texture,
+                splash_until,
             },
         }
     }
@@ -251,6 +264,46 @@ impl App {
 
     fn refresh_status(&mut self) {
         self.send(Command::Status);
+    }
+
+    fn draw_splash(&self, ui: &mut egui::Ui) {
+        egui::CentralPanel::default()
+            .frame(egui::Frame::NONE.fill(Color32::from_rgb(14, 16, 20)))
+            .show(ui, |ui| {
+                let rect = ui.max_rect();
+                let center = rect.center();
+                let logo_rect = egui::Rect::from_center_size(
+                    center - egui::vec2(0.0, 35.0),
+                    egui::vec2(170.0, 170.0),
+                );
+                ui.painter().image(
+                    self.splash_texture.id(),
+                    logo_rect,
+                    egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+                    Color32::WHITE,
+                );
+                ui.painter().text(
+                    center + egui::vec2(0.0, 95.0),
+                    egui::Align2::CENTER_CENTER,
+                    "aiqiezi",
+                    egui::FontId::proportional(30.0),
+                    Color32::WHITE,
+                );
+                ui.painter().text(
+                    center + egui::vec2(0.0, 128.0),
+                    egui::Align2::CENTER_CENTER,
+                    "photo/video archive",
+                    egui::FontId::proportional(15.0),
+                    Color32::GRAY,
+                );
+                ui.put(
+                    egui::Rect::from_center_size(
+                        center + egui::vec2(0.0, 178.0),
+                        egui::vec2(20.0, 20.0),
+                    ),
+                    egui::Spinner::new(),
+                );
+            });
     }
 
     fn draw_header(&mut self, ui: &mut egui::Ui) -> Option<Command> {
@@ -584,6 +637,13 @@ impl App {
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         self.poll_events();
+
+        if Instant::now() < self.splash_until {
+            self.draw_splash(ui);
+            ui.ctx().request_repaint_after(Duration::from_millis(16));
+            return;
+        }
+
         let mut pending = self.draw_header(ui);
 
         egui::CentralPanel::default().show(ui, |ui| {

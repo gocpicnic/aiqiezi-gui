@@ -7,6 +7,7 @@ Native desktop GUI for the aiqiezi single-backend photo and video archive.
 First connection and authentication milestone implemented:
 
 - native `eframe`/`egui` window;
+- branded startup splash and window icon;
 - automatic local client daemon startup;
 - first-run server EndpointId setup form;
 - connection to the local client daemon over the shared local socket;
@@ -31,7 +32,8 @@ Build prerequisites:
 - Linux: X11/Wayland and graphics development libraries required by
   `eframe`/`wgpu`;
 - macOS: Xcode command-line tools;
-- Windows: the MSVC Rust toolchain and Visual Studio C++ build tools.
+- Windows: the MSVC Rust toolchain, Visual Studio C++ build tools, and the
+  Windows SDK resource compiler used to embed the application icon.
 
 ARM64 targets, including Apple Silicon, are not yet supported. Source builds
 may work on those hosts, but they are untested and outside the support matrix.
@@ -64,6 +66,19 @@ aiqiezi-server
 The GUI uses the shared `aiqiezi-client` library from the CLI repository. It
 does not access PostgreSQL or the server filesystem directly, and it does not
 create a second iroh endpoint.
+
+## Branding assets
+
+Branding files live in `assets/`:
+
+```text
+assets/aiqiezi.png   # splash and runtime window icon
+assets/aiqiezi.ico   # Windows executable icon
+```
+
+The PNG is embedded in the binary and shown for 1.5 seconds during startup while
+the daemon is initialized. The ICO is embedded into Windows executables through
+`build.rs`; the PNG is used for the runtime window/taskbar icon on all platforms.
 
 ## Running
 
