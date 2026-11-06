@@ -50,6 +50,10 @@ The sidebar and inspector are resizable. Login, password change, EndpointId
 change, server info, and About are dialogs. The app opens directly into setup,
 daemon-starting, or the workspace state; there is no splash.
 
+EndpointId fields include `Paste` and `Copy`, and the inspector and Server Info
+dialog can copy full public IDs and JSON. Native `Ctrl+V` / `Cmd+V` and
+`Ctrl+C` / `Cmd+C` remain available.
+
 See [docs/interface.md](docs/interface.md) for the full interaction guide.
 
 ## Platform support

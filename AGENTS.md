@@ -143,6 +143,9 @@ aiqiezi-gui/
   workspace.
 - Use resizable fixed panels. Do not add a full docking dependency without an
   explicit decision.
+- Long public EndpointIds must have explicit Paste/Copy affordances; keep native
+  keyboard clipboard shortcuts working.
+- Never copy password fields or secrets to the clipboard.
 - Use FilmCraft only as a reference for video playback; do not copy its editing
   workspace or add it as a dependency.
 - Never block the egui render thread on network or disk I/O.

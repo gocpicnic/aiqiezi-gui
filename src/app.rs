@@ -736,22 +736,16 @@ impl App {
                                 .spacing([10.0, 8.0])
                                 .show(ui, |ui| {
                                     ui.label("Client");
-                                    ui.add(
-                                        egui::Label::new(
-                                            RichText::new(short_id(&status.client_id)).monospace(),
-                                        )
-                                        .wrap(),
+                                    copyable_id(
+                                        ui,
+                                        &status.client_id,
+                                        &short_id(&status.client_id),
                                     );
                                     ui.end_row();
                                     ui.label("Server");
                                     match &status.server_id {
                                         Some(id) => {
-                                            ui.add(
-                                                egui::Label::new(
-                                                    RichText::new(short_id(id)).monospace(),
-                                                )
-                                                .wrap(),
-                                            );
+                                            copyable_id(ui, id, &short_id(id));
                                         }
                                         None => {
                                             ui.label(
@@ -874,11 +868,34 @@ impl App {
                         ui.monospace("aiqiezi-server whoami");
                         ui.add_space(12.0);
                         ui.label("Server EndpointId");
-                        ui.add(
-                            egui::TextEdit::singleline(&mut self.server_id_input)
-                                .desired_width(width)
-                                .hint_text("server EndpointId"),
-                        );
+                        ui.horizontal(|ui| {
+                            ui.add(
+                                egui::TextEdit::singleline(&mut self.server_id_input)
+                                    .desired_width((width - 130.0).max(240.0))
+                                    .hint_text("server EndpointId"),
+                            );
+                            if ui.button("Paste").clicked() {
+                                match paste_endpoint_into(&mut self.server_id_input) {
+                                    Ok(()) => self.message = None,
+                                    Err(error) => {
+                                        self.message = Some(Message {
+                                            text: error,
+                                            error: true,
+                                        });
+                                    }
+                                }
+                            }
+                            if ui
+                                .add_enabled(
+                                    !self.server_id_input.is_empty(),
+                                    egui::Button::new("Copy"),
+                                )
+                                .clicked()
+                            {
+                                ui.ctx().copy_text(self.server_id_input.clone());
+                            }
+                        });
+                        ui.label(RichText::new("Ctrl+V / ⌘V also works").weak());
                         ui.add_space(8.0);
                         if ui
                             .add_enabled(
@@ -1102,11 +1119,34 @@ impl App {
                 .open(&mut open)
                 .show(ctx, |ui| {
                     ui.label("aiqiezi-server EndpointId");
-                    ui.add(
-                        egui::TextEdit::singleline(&mut self.server_id_input)
-                            .desired_width(440.0)
-                            .hint_text("server EndpointId"),
-                    );
+                    ui.horizontal(|ui| {
+                        ui.add(
+                            egui::TextEdit::singleline(&mut self.server_id_input)
+                                .desired_width(360.0)
+                                .hint_text("server EndpointId"),
+                        );
+                        if ui.button("Paste").clicked() {
+                            match paste_endpoint_into(&mut self.server_id_input) {
+                                Ok(()) => self.message = None,
+                                Err(error) => {
+                                    self.message = Some(Message {
+                                        text: error,
+                                        error: true,
+                                    });
+                                }
+                            }
+                        }
+                        if ui
+                            .add_enabled(
+                                !self.server_id_input.is_empty(),
+                                egui::Button::new("Copy"),
+                            )
+                            .clicked()
+                        {
+                            ui.ctx().copy_text(self.server_id_input.clone());
+                        }
+                    });
+                    ui.label(RichText::new("Ctrl+V / ⌘V also works").weak());
                     ui.add_space(8.0);
                     if ui
                         .add_enabled(
@@ -1131,6 +1171,10 @@ impl App {
 
         if self.server_info_open {
             let mut open = self.server_info_open;
+            let server_info_text = self
+                .server_info
+                .as_ref()
+                .and_then(|info| serde_json::to_string_pretty(info).ok());
             egui::Window::new("Server Info")
                 .collapsible(false)
                 .resizable(true)
@@ -1138,14 +1182,18 @@ impl App {
                 .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
                 .open(&mut open)
                 .show(ctx, |ui| {
+                    if let Some(text) = &server_info_text {
+                        if ui.button("Copy JSON").clicked() {
+                            ui.ctx().copy_text(text.clone());
+                        }
+                    }
                     egui::ScrollArea::vertical()
                         .max_height(420.0)
-                        .show(ui, |ui| {
-                            if let Some(info) = &self.server_info {
-                                if let Ok(text) = serde_json::to_string_pretty(info) {
-                                    ui.monospace(text);
-                                }
-                            } else {
+                        .show(ui, |ui| match &server_info_text {
+                            Some(text) => {
+                                ui.monospace(text);
+                            }
+                            None => {
                                 ui.label("No server information received.");
                             }
                         });
@@ -1255,6 +1303,31 @@ impl eframe::App for App {
             ui.ctx().request_repaint_after(Duration::from_millis(100));
         }
     }
+}
+
+fn paste_endpoint_into(target: &mut String) -> Result<(), String> {
+    let mut clipboard =
+        arboard::Clipboard::new().map_err(|error| format!("clipboard unavailable: {error}"))?;
+    let text = clipboard
+        .get_text()
+        .map_err(|error| format!("could not read the clipboard: {error}"))?;
+    let text = text.trim();
+    if text.is_empty() {
+        return Err("the clipboard does not contain an EndpointId".to_string());
+    }
+    text.parse::<EndpointId>()
+        .map_err(|error| format!("clipboard does not contain a valid EndpointId: {error}"))?;
+    *target = text.to_string();
+    Ok(())
+}
+
+fn copyable_id(ui: &mut egui::Ui, value: &str, display: &str) {
+    ui.horizontal(|ui| {
+        ui.add(egui::Label::new(RichText::new(display).monospace()).wrap());
+        if ui.small_button("Copy").clicked() {
+            ui.ctx().copy_text(value.to_string());
+        }
+    });
 }
 
 fn short_id(id: &str) -> String {

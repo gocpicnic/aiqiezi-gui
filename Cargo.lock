@@ -226,6 +226,7 @@ version = "0.1.0"
 dependencies = [
  "aiqiezi-client",
  "anyhow",
+ "arboard",
  "eframe",
  "image",
  "serde_json",

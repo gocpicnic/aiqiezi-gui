@@ -29,6 +29,18 @@ status bar
 - There is no startup splash and no logo or wordmark in the workspace. The app
   icon is used only by the operating system.
 
+## Clipboard
+
+Long public identifiers are clipboard-friendly:
+
+- setup and Change EndpointId fields have `Paste` and `Copy`;
+- Inspector → Server has `Copy` beside both EndpointIds;
+- Server Info has `Copy JSON`.
+
+`Paste` trims whitespace and rejects content that is not a valid EndpointId.
+Native `Ctrl+V` / `Cmd+V` and `Ctrl+C` / `Cmd+C` continue to work in text
+fields. Password fields are never copied by the application.
+
 ## Menus
 
 - **File**: Refresh; Exit and stop client.
