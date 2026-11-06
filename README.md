@@ -2,7 +2,11 @@
 
 [![CI](https://github.com/gocpicnic/aiqiezi-gui/actions/workflows/ci.yml/badge.svg)](https://github.com/gocpicnic/aiqiezi-gui/actions/workflows/ci.yml)
 
-Native desktop GUI for the aiqiezi single-backend photo and video archive.
+Native desktop GUI for
+[aiqiezi-server](https://github.com/gocpicnic/aiqiezi-server), the self-hosted
+photo and video archive backend. The GUI connects through the local
+`aiqiezi` client daemon, handles first-run server EndpointId setup, and provides
+login and server administration.
 
 ## Status
 
