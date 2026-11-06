@@ -23,9 +23,9 @@ Asset browsing, thumbnails, search, and video playback remain deferred.
 
 ## Platform support
 
-Tier 1 targets are x86_64 Windows, x86_64 macOS, and x86_64 Linux. The GUI is
-distributed as a source build only: there are no installers, signing, or
-notarization yet.
+Tier 1 targets are x86_64 Windows, x86_64 macOS, and x86_64 Linux. Tagged
+releases provide prebuilt binaries for these targets. There are no installers,
+signing, or notarization yet; source builds remain supported.
 
 Build prerequisites:
 
@@ -37,6 +37,34 @@ Build prerequisites:
 
 ARM64 targets, including Apple Silicon, are not yet supported. Source builds
 may work on those hosts, but they are untested and outside the support matrix.
+
+## Releases
+
+Pushing a `v*` tag runs the GitHub Actions release workflow. Each archive
+contains:
+
+```text
+aiqiezi-gui
+aiqiezi
+LICENSE
+```
+
+Release assets:
+
+```text
+aiqiezi-gui-X.Y.Z-x86_64-unknown-linux-gnu.tar.gz
+aiqiezi-gui-X.Y.Z-x86_64-apple-darwin.tar.gz
+aiqiezi-gui-X.Y.Z-x86_64-pc-windows-msvc.zip
+SHA256SUMS
+```
+
+The bundled `aiqiezi` daemon comes from the CLI revision pinned in
+`Cargo.toml`, so the GUI and daemon use the same protocol.
+
+Linux binaries require compatible X11/Wayland/OpenGL libraries and a glibc
+runtime at least as new as the Ubuntu 22.04 build runner. macOS and Windows
+binaries are unsigned; Gatekeeper and SmartScreen may show warnings. No
+installers, signing, notarization, or ARM64 binaries are provided.
 
 ## Purpose
 
@@ -152,7 +180,8 @@ aiqiezi-client = { git = "https://github.com/gocpicnic/aiqiezi-cli", rev = "7e2a
 Update the pinned revision when the shared client library changes. No local
 checkout of the CLI repository is required.
 
-The GUI is built from source; no installers or signing are provided.
+The GUI can be built from source or downloaded from a tagged release. No
+installers or signing are provided.
 
 ## Runnable bundle
 

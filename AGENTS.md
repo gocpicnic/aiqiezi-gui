@@ -42,9 +42,10 @@ Mandatory constraints:
 
 ## Platform support
 
-Tier 1 platforms are x86_64 Windows, x86_64 macOS, and x86_64 Linux. The GUI
-is source-build only; do not add installer, signing, or notarization pipelines
-as part of normal feature work. ARM64 targets are deferred.
+Tier 1 platforms are x86_64 Windows, x86_64 macOS, and x86_64 Linux. Tagged
+releases publish prebuilt binaries for these targets. Do not add installer,
+signing, or notarization pipelines as part of normal feature work. ARM64
+targets are deferred.
 
 Rules:
 
@@ -57,6 +58,24 @@ Rules:
 - Windows builds use the Windows SDK resource compiler through `winresource`
   to embed `assets/aiqiezi.ico`;
 - add ARM64 only after it is explicitly added to the support matrix.
+
+## Release rules
+
+- A `v*` tag builds Linux x86_64, macOS x86_64, and Windows x86_64 archives.
+- Build Linux on Ubuntu 22.04 for a stable glibc baseline.
+- Build macOS on `macos-15-intel` and Windows with the MSVC toolchain.
+- Every archive contains `aiqiezi-gui`, the matching `aiqiezi` daemon, and
+  `LICENSE`.
+- Resolve the CLI revision from the `aiqiezi-client` pin in `Cargo.toml`; do not
+  hardcode a second daemon revision.
+- Bundle the daemon by building the pinned CLI revision for the same target.
+- Publish `SHA256SUMS` with every release.
+- Do not publish ARM64, installers, signed, or notarized artifacts yet.
+- Windows builds use the static CRT and embed `assets/aiqiezi.ico`.
+- macOS binaries are unsigned and may require the user to bypass Gatekeeper
+  manually.
+- Linux binaries are dynamically linked against glibc; document the baseline.
+- Never commit release artifacts or credentials.
 
 ## Architecture
 
@@ -79,6 +98,8 @@ It does not own an iroh endpoint and does not create a second client identity.
 
 ```text
 aiqiezi-gui/
+├── .github/
+│   └── workflows/release.yml
 ├── Cargo.toml
 ├── Makefile
 ├── assets/
