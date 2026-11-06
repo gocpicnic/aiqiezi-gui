@@ -137,7 +137,8 @@ aiqiezi-gui/
 ## UI rules
 
 - Follow the LightCraft-style workspace: menu bar, toolbar, left library sidebar,
-  central asset grid, right inspector, and bottom status bar.
+  central asset grid, right inspector, and bottom status bar. See
+  [docs/interface.md](docs/interface.md).
 - Use a charcoal dark theme and the blue accent token; do not add a logo to the
   workspace.
 - Use resizable fixed panels. Do not add a full docking dependency without an
@@ -225,8 +226,8 @@ The GUI may spawn the bundled `aiqiezi start` process only for daemon lifecycle:
 - on first run with no server EndpointId, show the setup form, save the
   EndpointId through the daemon or CLI, then start the daemon;
 - the window close icon exits only the GUI and leaves the daemon running;
-- the explicit **Exit and stop client** button sends `shutdown` to the local
-  daemon and then closes the GUI.
+- **File → Exit and stop client** sends `shutdown` to the local daemon and then
+  closes the GUI.
 
 Find the CLI in this order: `AIQIEZI_CLI_BIN`, next to the GUI executable, then
 `PATH`. Redirect daemon output to `<data_dir>/client.log`.

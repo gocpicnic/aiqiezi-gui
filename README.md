@@ -26,6 +26,32 @@ There is no startup splash and no logo or wordmark inside the workspace.
 
 Asset browsing, thumbnails, search, and video playback remain deferred.
 
+## Interface
+
+The workspace has a LightCraft-style layout:
+
+```text
+menu bar
+toolbar
+┌──────────────┬──────────────────────────────┬────────────────┐
+│ Library      │                              │ Inspector      │
+│ sidebar      │ asset grid / empty state     │ Info / Server  │
+└──────────────┴──────────────────────────────┴────────────────┘
+status bar
+```
+
+Menus:
+
+```text
+File    Edit    View    Server    Help
+```
+
+The sidebar and inspector are resizable. Login, password change, EndpointId
+change, server info, and About are dialogs. The app opens directly into setup,
+daemon-starting, or the workspace state; there is no splash.
+
+See [docs/interface.md](docs/interface.md) for the full interaction guide.
+
 ## Platform support
 
 Tier 1 targets are x86_64 Windows, x86_64 macOS, and x86_64 Linux. Tagged
@@ -149,9 +175,9 @@ for the aiqiezi-server EndpointId:
 aiqiezi-server whoami
 ```
 
-After the EndpointId is saved, the GUI starts the daemon and shows the login
-form. Later launches reuse the saved EndpointId and attach to an already-running
-daemon.
+After the EndpointId is saved, the GUI starts the daemon and opens the Login
+dialog. Later launches reuse the saved EndpointId and attach to an
+already-running daemon.
 
 For source runs, the GUI finds the daemon from `AIQIEZI_CLI_BIN`, next to the GUI
 binary, or on `PATH`. `make build` bundles both binaries in `dist/`.
@@ -164,7 +190,7 @@ The defaults are relative to the current directory, so starting the CLI and GUI
 from different directories will not connect them to the same daemon.
 
 Closing the window exits only the GUI and leaves the daemon running. Use
-**Exit and stop client** to stop the daemon as well.
+**File → Exit and stop client** to stop the daemon as well.
 
 ## Development
 
@@ -285,6 +311,8 @@ key and the iroh connection.
 ## Documentation
 
 - [AGENTS.md](AGENTS.md): implementation rules for AI coding agents
+- [docs/interface.md](docs/interface.md): workspace layout, menus, and startup
+  states
 - [docs/branding.md](docs/branding.md): branding assets, icons, and font policy
 - [docs/video-playback.md](docs/video-playback.md): playback architecture and
   decoder backend trade-offs
