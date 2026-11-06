@@ -1,5 +1,7 @@
 # aiqiezi-gui
 
+[![CI](https://github.com/gocpicnic/aiqiezi-gui/actions/workflows/ci.yml/badge.svg)](https://github.com/gocpicnic/aiqiezi-gui/actions/workflows/ci.yml)
+
 Native desktop GUI for the aiqiezi single-backend photo and video archive.
 
 ## Status
