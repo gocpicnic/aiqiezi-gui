@@ -76,6 +76,7 @@ It does not own an iroh endpoint and does not create a second client identity.
 ```text
 aiqiezi-gui/
 ├── Cargo.toml
+├── Makefile
 ├── build.rs
 ├── src/
 │   ├── main.rs
@@ -109,6 +110,27 @@ aiqiezi-gui/
 - Show explicit states: loading, empty, partial, offline, and error.
 - Keep destructive actions behind confirmation dialogs.
 - Do not load all assets or all thumbnails at once.
+
+## Build and bundle
+
+`make build` produces a runnable directory containing both the GUI and the
+client daemon:
+
+```text
+dist/aiqiezi-gui
+dist/aiqiezi
+dist/LICENSE
+```
+
+The Makefile reads the pinned `aiqiezi-cli` revision from `Cargo.toml` and
+builds the `aiqiezi` binary from that Git revision. The GUI and daemon must
+use the same client protocol revision. No local CLI checkout is required.
+
+`AIQIEZI_CLI_BIN=/path/to/aiqiezi make build` allows a locally built daemon to
+be bundled instead.
+
+Do not copy a stale daemon binary without updating the pinned client revision.
+The GUI cannot work without the daemon running.
 
 ## Data flow
 
@@ -191,6 +213,12 @@ trade-offs. Do not copy FilmCraft's internal codec crates wholesale.
 ## Commands
 
 ```bash
+make build
+make run
+make test
+make clippy
+make ci
+
 cargo check
 cargo test
 cargo fmt --all

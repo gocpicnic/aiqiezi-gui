@@ -106,6 +106,43 @@ checkout of the CLI repository is required.
 
 The GUI is built from source; no installers or signing are provided.
 
+## Runnable bundle
+
+Build the GUI and bundle the matching `aiqiezi` client daemon:
+
+```bash
+make build
+```
+
+Output:
+
+```text
+dist/
+├── aiqiezi-gui
+├── aiqiezi
+└── LICENSE
+```
+
+On Windows the binaries use `.exe`.
+
+The Makefile reads the pinned `aiqiezi-cli` revision from `Cargo.toml` and
+installs the daemon from that Git revision, so the GUI and daemon use the same
+client protocol. No local CLI checkout is required.
+
+Run the bundle:
+
+```bash
+cd dist
+./aiqiezi start
+./aiqiezi-gui
+```
+
+To bundle a locally built CLI instead:
+
+```bash
+AIQIEZI_CLI_BIN=/path/to/aiqiezi make build
+```
+
 ## Why egui
 
 - native desktop application;
