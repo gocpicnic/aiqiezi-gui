@@ -52,6 +52,10 @@ fallback.
 - **View**: Show/hide Sidebar; Show/hide Inspector; Grid/List view.
 - **Server**: Login; Change Password; Server Info; Change EndpointId; Reconnect;
   Refresh Status.
+
+**Reconnect** asks the running daemon to refresh its iroh network state after
+sleep or a network change. It does not restart the daemon or the GUI. Read-only
+backend requests also retry once after a timeout.
 - **Help**: About aiqiezi.
 
 Login, password change, EndpointId change, server info, and About are dialogs.

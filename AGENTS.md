@@ -146,6 +146,9 @@ aiqiezi-gui/
 - Long public EndpointIds must have explicit Paste/Copy affordances; keep native
   keyboard clipboard shortcuts working.
 - Never copy password fields or secrets to the clipboard.
+- Wire GUI Reconnect actions to the daemon's `reconnect` command so the iroh
+  endpoint can recover after sleep or a network change; do not restart the
+  daemon for a network refresh.
 - Use FilmCraft only as a reference for video playback; do not copy its editing
   workspace or add it as a dependency.
 - Never block the egui render thread on network or disk I/O.
@@ -191,9 +194,10 @@ dist/LICENSE
 
 The Makefile reads the pinned `aiqiezi-cli` revision from `Cargo.toml` and
 builds the `aiqiezi` binary from that Git revision. The pin must be a CLI
-revision that supports `aiqiezi start [<server-endpoint-id>]`; the current pin
-is the `v0.1.1` release commit. The GUI and daemon must use the same client
-protocol revision. No local CLI checkout is required.
+revision that supports `aiqiezi start [<server-endpoint-id>]` and network-change
+recovery. The current pin is the CLI networking-recovery commit (after the
+`v0.1.1` release). The GUI and daemon must use the same client protocol
+revision. No local CLI checkout is required.
 
 `AIQIEZI_CLI_BIN=/path/to/aiqiezi make build` allows a locally built daemon to
 be bundled instead.

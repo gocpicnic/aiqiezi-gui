@@ -8,7 +8,7 @@ repository = "https://github.com/gocpicnic/aiqiezi-gui"
 build = "build.rs"
 
 [dependencies]
-aiqiezi-client = { git = "https://github.com/gocpicnic/aiqiezi-cli", rev = "7e2a5e19681948595afa11d7f54b05003a333121" }
+aiqiezi-client = { git = "https://github.com/gocpicnic/aiqiezi-cli", rev = "664e72fe41f45d3934602e988864cae9aab40cf2" }
 anyhow = "1"
 arboard = "3.7"
 eframe = { version = "0.37", features = ["wgpu"] }

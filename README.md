@@ -56,6 +56,10 @@ dialog can copy full public IDs and JSON. Native `Ctrl+V` / `Cmd+V` and
 on compositor data-control support; if `Paste` is unavailable, it reports an
 error and `Ctrl+V` remains the fallback.
 
+After sleep, a network switch, or a temporary outage, use **Server → Reconnect**
+or the Reconnect button in the inspector. This refreshes the daemon's iroh
+network state without restarting it.
+
 See [docs/interface.md](docs/interface.md) for the full interaction guide.
 
 ## Platform support
@@ -211,7 +215,7 @@ cargo run
 The GUI depends on the shared client library through a pinned Git dependency:
 
 ```toml
-aiqiezi-client = { git = "https://github.com/gocpicnic/aiqiezi-cli", rev = "7e2a5e19681948595afa11d7f54b05003a333121" }
+aiqiezi-client = { git = "https://github.com/gocpicnic/aiqiezi-cli", rev = "664e72fe41f45d3934602e988864cae9aab40cf2" }
 ```
 
 Update the pinned revision when the shared client library changes. No local

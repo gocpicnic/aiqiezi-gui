@@ -24,6 +24,7 @@ pub enum Command {
     Login(String),
     ChangePassword { old: String, new: String },
     ServerInfo,
+    Reconnect,
     ShutdownDaemonAndExit,
 }
 
@@ -172,6 +173,13 @@ fn worker_thread(
                         &events,
                         "server-info",
                         local_request(&config, "server-info", json!({})).await,
+                    );
+                }
+                Command::Reconnect => {
+                    send_response(
+                        &events,
+                        "reconnect",
+                        local_request(&config, "reconnect", json!({})).await,
                     );
                 }
                 Command::ShutdownDaemonAndExit => {

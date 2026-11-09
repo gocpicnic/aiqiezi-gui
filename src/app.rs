@@ -332,6 +332,13 @@ impl App {
                     error: false,
                 });
             }
+            "reconnect" => {
+                self.message = Some(Message {
+                    text: "network state refreshed".to_string(),
+                    error: false,
+                });
+                self.refresh_status();
+            }
             "set-server" => {
                 self.endpoint_open = false;
                 self.message = Some(Message {
@@ -412,8 +419,7 @@ impl App {
                 self.endpoint_open = true;
             }
             MenuAction::Reconnect => {
-                self.connection = ConnectionState::Starting;
-                return Some(Command::EnsureDaemon { endpoint_id: None });
+                return Some(Command::Reconnect);
             }
             MenuAction::About => self.about_open = true,
         }
@@ -783,8 +789,7 @@ impl App {
                             self.endpoint_open = true;
                         }
                         if ui.button("Reconnect").clicked() {
-                            self.connection = ConnectionState::Starting;
-                            pending = Some(Command::EnsureDaemon { endpoint_id: None });
+                            pending = Some(Command::Reconnect);
                         }
                     }
                 }
