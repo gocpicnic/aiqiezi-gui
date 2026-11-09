@@ -34,7 +34,7 @@ pub fn spawn_daemon(
         )
     })?;
 
-    let log_path = config.data_dir.join("client.log");
+    let log_path = client_log_path(config);
     let log = OpenOptions::new()
         .create(true)
         .append(true)
@@ -77,7 +77,11 @@ pub fn spawn_daemon(
     Ok(SpawnedDaemon { child, log_path })
 }
 
-fn find_cli() -> Option<PathBuf> {
+pub fn client_log_path(config: &ClientConfig) -> PathBuf {
+    config.data_dir.join("client.log")
+}
+
+pub fn find_cli() -> Option<PathBuf> {
     if let Some(path) = std::env::var_os("AIQIEZI_CLI_BIN") {
         let path = PathBuf::from(path);
         if path.is_file() {

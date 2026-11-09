@@ -146,6 +146,10 @@ aiqiezi-gui/
 - Long public EndpointIds must have explicit Paste/Copy affordances; keep native
   keyboard clipboard shortcuts working.
 - Never copy password fields or secrets to the clipboard.
+- Keep the Help → Debug diagnostics useful: record command name, duration, and
+  outcome only; never record passwords or request parameters.
+- The Debug Runtime Info view must explain that the GUI starts the CLI daemon
+  once and uses local socket JSON for subsequent actions.
 - Wire GUI Reconnect actions to the daemon's `reconnect` command so the iroh
   endpoint can recover after sleep or a network change; do not restart the
   daemon for a network refresh.
