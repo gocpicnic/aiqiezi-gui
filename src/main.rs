@@ -28,7 +28,7 @@ fn main() -> eframe::Result {
     };
 
     eframe::run_native(
-        "aiqiezi",
+        "aiqiezi-gui",
         options,
         Box::new(|cc| Ok(Box::new(app::App::new(cc)))),
     )
