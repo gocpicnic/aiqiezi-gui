@@ -5,7 +5,6 @@
   license that can be found in the LICENSE file.
 */
 
-use std::io::{Read, Seek, SeekFrom};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::{Duration, Instant};
 
@@ -26,16 +25,7 @@ pub enum Command {
     ChangePassword { old: String, new: String },
     ServerInfo,
     Reconnect,
-    ReadCliLog,
     ShutdownDaemonAndExit,
-}
-
-#[derive(Debug, Clone)]
-pub struct DebugEntry {
-    pub sequence: u64,
-    pub command: String,
-    pub duration: Duration,
-    pub outcome: String,
 }
 
 #[derive(Debug)]
@@ -44,8 +34,6 @@ pub enum Event {
     EnsureDaemon(Result<StatusInfo, String>),
     Status(Result<StatusInfo, String>),
     DaemonStopped(Result<(), String>),
-    Debug(DebugEntry),
-    CliLog(Result<String, String>),
     Response { label: String, response: Response },
 }
 
@@ -143,70 +131,59 @@ fn worker_thread(
     };
 
     runtime.block_on(async move {
-        let mut sequence = 0;
         while let Some(command) = commands.recv().await {
-            let started = Instant::now();
             match command {
                 Command::EnsureDaemon { endpoint_id } => {
                     let result = ensure_daemon(&config, endpoint_id).await;
-                    emit_debug(
-                        &events,
-                        &mut sequence,
-                        "start daemon",
-                        started,
-                        status_outcome(&result),
-                    );
                     let _ = events.send(Event::EnsureDaemon(result));
                 }
                 Command::Status => {
                     let result = status_request(&config).await;
-                    emit_debug(
-                        &events,
-                        &mut sequence,
-                        "status",
-                        started,
-                        status_outcome(&result),
-                    );
                     let _ = events.send(Event::Status(result));
                 }
                 Command::SetServer(endpoint_id) => {
-                    let result =
+                    send_response(
+                        &events,
+                        "set-server",
                         local_request(&config, "set-server", json!({"endpoint_id": endpoint_id}))
-                            .await;
-                    send_response(&events, &mut sequence, "set-server", started, result);
+                            .await,
+                    );
                 }
                 Command::Login(password) => {
-                    let result =
-                        local_request(&config, "login", json!({"password": password})).await;
-                    send_response(&events, &mut sequence, "login", started, result);
+                    send_response(
+                        &events,
+                        "login",
+                        local_request(&config, "login", json!({"password": password})).await,
+                    );
                 }
                 Command::ChangePassword { old, new } => {
-                    let result = local_request(
-                        &config,
+                    send_response(
+                        &events,
                         "change-password",
-                        json!({"old_password": old, "new_password": new}),
-                    )
-                    .await;
-                    send_response(&events, &mut sequence, "change-password", started, result);
+                        local_request(
+                            &config,
+                            "change-password",
+                            json!({"old_password": old, "new_password": new}),
+                        )
+                        .await,
+                    );
                 }
                 Command::ServerInfo => {
-                    let result = local_request(&config, "server-info", json!({})).await;
-                    send_response(&events, &mut sequence, "server-info", started, result);
+                    send_response(
+                        &events,
+                        "server-info",
+                        local_request(&config, "server-info", json!({})).await,
+                    );
                 }
                 Command::Reconnect => {
-                    let result = local_request(&config, "reconnect", json!({})).await;
-                    send_response(&events, &mut sequence, "reconnect", started, result);
-                }
-                Command::ReadCliLog => {
-                    let _ = events.send(Event::CliLog(read_cli_log(&config)));
+                    send_response(
+                        &events,
+                        "reconnect",
+                        local_request(&config, "reconnect", json!({})).await,
+                    );
                 }
                 Command::ShutdownDaemonAndExit => {
                     let result = stop_daemon(&config).await;
-                    let outcome = match &result {
-                        Ok(()) => "ok".to_string(),
-                        Err(error) => error.clone(),
-                    };
-                    emit_debug(&events, &mut sequence, "shutdown", started, outcome);
                     let _ = events.send(Event::DaemonStopped(result));
                 }
             }
@@ -311,99 +288,24 @@ async fn local_request(
     local::request(&config.socket_path, &request).await
 }
 
-fn send_response(
-    events: &Sender<Event>,
-    sequence: &mut u64,
-    label: &str,
-    started: Instant,
-    result: anyhow::Result<Response>,
-) {
+fn send_response(events: &Sender<Event>, label: &str, result: anyhow::Result<Response>) {
     match result {
         Ok(response) => {
-            let outcome = response_error(&response);
-            let ok = response.ok;
-            emit_debug(
-                events,
-                sequence,
-                label,
-                started,
-                if ok {
-                    "ok".to_string()
-                } else {
-                    outcome.clone()
-                },
-            );
             let _ = events.send(Event::Response {
                 label: label.to_string(),
                 response,
             });
         }
         Err(error) => {
-            let message = format!("{error:#}");
-            emit_debug(events, sequence, label, started, message.clone());
             let _ = events.send(Event::Response {
                 label: label.to_string(),
                 response: Response::error(
                     None,
                     aiqiezi_client::aiqiezi_proto::error_codes::INTERNAL,
-                    message,
+                    format!("{error:#}"),
                 ),
             });
         }
-    }
-}
-
-fn status_outcome(result: &Result<StatusInfo, String>) -> String {
-    match result {
-        Ok(_) => "ok".to_string(),
-        Err(error) => error.clone(),
-    }
-}
-
-fn emit_debug(
-    events: &Sender<Event>,
-    sequence: &mut u64,
-    command: &str,
-    started: Instant,
-    outcome: String,
-) {
-    *sequence += 1;
-    let _ = events.send(Event::Debug(DebugEntry {
-        sequence: *sequence,
-        command: command.to_string(),
-        duration: started.elapsed(),
-        outcome,
-    }));
-}
-
-fn read_cli_log(config: &ClientConfig) -> Result<String, String> {
-    const MAX_LOG_BYTES: u64 = 64 * 1024;
-    let path = daemon_process::client_log_path(config);
-
-    let mut file =
-        std::fs::File::open(&path).map_err(|error| format!("open {}: {error}", path.display()))?;
-    let length = file
-        .metadata()
-        .map_err(|error| format!("read metadata for {}: {error}", path.display()))?
-        .len();
-    let start = length.saturating_sub(MAX_LOG_BYTES);
-    file.seek(SeekFrom::Start(start))
-        .map_err(|error| format!("seek {}: {error}", path.display()))?;
-
-    let mut bytes = Vec::new();
-    file.read_to_end(&mut bytes)
-        .map_err(|error| format!("read {}: {error}", path.display()))?;
-    let mut text = String::from_utf8_lossy(&bytes).into_owned();
-    if start > 0 {
-        if let Some(newline) = text.find('\n') {
-            text = text[newline + 1..].to_string();
-        }
-    }
-
-    if text.trim().is_empty() {
-        Ok(format!("{} is empty", path.display()))
-    } else {
-        Ok(text)
     }
 }
 
@@ -417,25 +319,13 @@ fn response_error(response: &Response) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{read_cli_log, stop_daemon, StatusInfo};
+    use super::{stop_daemon, StatusInfo};
     use aiqiezi_client::aiqiezi_proto::{Request, Response};
     use aiqiezi_client::ClientConfig;
     use serde_json::json;
 
     #[cfg(unix)]
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-
-    #[test]
-    fn reads_cli_log_tail() {
-        let dir = tempfile::tempdir().unwrap();
-        let config = ClientConfig::load(dir.path().to_path_buf(), dir.path().join("run")).unwrap();
-        std::fs::create_dir_all(&config.data_dir).unwrap();
-        let path = crate::daemon_process::client_log_path(&config);
-        std::fs::write(&path, "old line\nnew line\n").unwrap();
-
-        let text = read_cli_log(&config).unwrap();
-        assert!(text.contains("new line"));
-    }
 
     #[cfg(unix)]
     #[tokio::test]

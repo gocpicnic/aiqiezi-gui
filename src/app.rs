@@ -5,7 +5,6 @@
   license that can be found in the LICENSE file.
 */
 
-use std::collections::VecDeque;
 use std::time::Duration;
 
 use aiqiezi_client::aiqiezi_proto::{error_codes, Response};
@@ -13,10 +12,9 @@ use aiqiezi_client::{ClientConfig, EndpointId};
 use eframe::egui::{self, RichText};
 use serde_json::Value;
 
-use crate::daemon_process;
 use crate::theme;
 use crate::version;
-use crate::worker::{Command, DebugEntry, Event, StatusInfo, WorkerHandle};
+use crate::worker::{Command, Event, StatusInfo, WorkerHandle};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum ConnectionState {
@@ -74,10 +72,6 @@ enum MenuAction {
     ChangeEndpoint,
     Reconnect,
     About,
-    DebugRuntime,
-    DebugRequests,
-    DebugLog,
-    CopyDebugInfo,
 }
 
 struct Message {
@@ -87,7 +81,6 @@ struct Message {
 
 pub struct App {
     config_error: Option<String>,
-    config: Option<ClientConfig>,
     worker: Option<WorkerHandle>,
     connection: ConnectionState,
     connection_error: Option<String>,
@@ -115,13 +108,6 @@ pub struct App {
     endpoint_open: bool,
     server_info_open: bool,
     about_open: bool,
-    debug_runtime_open: bool,
-    debug_requests_open: bool,
-    debug_log_open: bool,
-    debug_entries: VecDeque<DebugEntry>,
-    cli_log: Option<String>,
-    cli_log_error: Option<String>,
-    copy_debug_info: bool,
 }
 
 impl App {
@@ -131,12 +117,10 @@ impl App {
         match ClientConfig::from_env() {
             Ok(config) => {
                 let setup_required = config.server_id.is_none();
-                let app_config = config.clone();
                 let worker = WorkerHandle::start(config);
                 if setup_required {
                     Self {
                         config_error: None,
-                        config: Some(app_config.clone()),
                         worker: Some(worker),
                         connection: ConnectionState::NeedsServer,
                         connection_error: None,
@@ -162,19 +146,11 @@ impl App {
                         endpoint_open: false,
                         server_info_open: false,
                         about_open: false,
-                        debug_runtime_open: false,
-                        debug_requests_open: false,
-                        debug_log_open: false,
-                        debug_entries: VecDeque::new(),
-                        cli_log: None,
-                        cli_log_error: None,
-                        copy_debug_info: false,
                     }
                 } else {
                     worker.send(Command::EnsureDaemon { endpoint_id: None });
                     Self {
                         config_error: None,
-                        config: Some(app_config),
                         worker: Some(worker),
                         connection: ConnectionState::Starting,
                         connection_error: None,
@@ -200,19 +176,11 @@ impl App {
                         endpoint_open: false,
                         server_info_open: false,
                         about_open: false,
-                        debug_runtime_open: false,
-                        debug_requests_open: false,
-                        debug_log_open: false,
-                        debug_entries: VecDeque::new(),
-                        cli_log: None,
-                        cli_log_error: None,
-                        copy_debug_info: false,
                     }
                 }
             }
             Err(error) => Self {
                 config_error: Some(format!("{error:#}")),
-                config: None,
                 worker: None,
                 connection: ConnectionState::Error,
                 connection_error: Some("client configuration failed".to_string()),
@@ -238,13 +206,6 @@ impl App {
                 endpoint_open: false,
                 server_info_open: false,
                 about_open: false,
-                debug_runtime_open: false,
-                debug_requests_open: false,
-                debug_log_open: false,
-                debug_entries: VecDeque::new(),
-                cli_log: None,
-                cli_log_error: None,
-                copy_debug_info: false,
             },
         }
     }
@@ -317,25 +278,6 @@ impl App {
                                 text: format!("could not stop client daemon: {error}"),
                                 error: true,
                             });
-                        }
-                    }
-                }
-                Event::Debug(entry) => {
-                    self.debug_entries.push_back(entry);
-                    while self.debug_entries.len() > 100 {
-                        self.debug_entries.pop_front();
-                    }
-                }
-                Event::CliLog(result) => {
-                    self.busy = false;
-                    match result {
-                        Ok(text) => {
-                            self.cli_log = Some(text);
-                            self.cli_log_error = None;
-                        }
-                        Err(error) => {
-                            self.cli_log = None;
-                            self.cli_log_error = Some(error);
                         }
                     }
                 }
@@ -480,15 +422,6 @@ impl App {
                 return Some(Command::Reconnect);
             }
             MenuAction::About => self.about_open = true,
-            MenuAction::DebugRuntime => self.debug_runtime_open = true,
-            MenuAction::DebugRequests => self.debug_requests_open = true,
-            MenuAction::DebugLog => {
-                self.debug_log_open = true;
-                self.cli_log = None;
-                self.cli_log_error = None;
-                return Some(Command::ReadCliLog);
-            }
-            MenuAction::CopyDebugInfo => self.copy_debug_info = true,
         }
         None
     }
@@ -619,24 +552,6 @@ impl App {
                             action = Some(MenuAction::About);
                             ui.close();
                         }
-                        ui.menu_button("Debug", |ui| {
-                            if ui.button("Runtime Info…").clicked() {
-                                action = Some(MenuAction::DebugRuntime);
-                                ui.close();
-                            }
-                            if ui.button("Recent Requests…").clicked() {
-                                action = Some(MenuAction::DebugRequests);
-                                ui.close();
-                            }
-                            if ui.button("Show CLI Log…").clicked() {
-                                action = Some(MenuAction::DebugLog);
-                                ui.close();
-                            }
-                            if ui.button("Copy Debug Info").clicked() {
-                                action = Some(MenuAction::CopyDebugInfo);
-                                ui.close();
-                            }
-                        });
                     });
                 });
             });
@@ -1080,64 +995,6 @@ impl App {
         pending
     }
 
-    fn debug_info_text(&self) -> String {
-        let mut text = String::new();
-        let cli = daemon_process::find_cli()
-            .map(|path| path.display().to_string())
-            .unwrap_or_else(|| "not found".to_string());
-        text.push_str(&format!("GUI version: {}\n", version::VERSION));
-        text.push_str(&format!("CLI binary: {cli}\n"));
-        text.push_str(&format!("Daemon launch: {cli} start\n"));
-        text.push_str("GUI-to-daemon: local socket JSON (not a CLI subprocess per request)\n");
-        text.push_str(&format!(
-            "AIQIEZI_CLI_BIN: {}\n",
-            std::env::var("AIQIEZI_CLI_BIN").unwrap_or_else(|_| "<unset>".to_string())
-        ));
-        text.push_str(&format!(
-            "AIQIEZI_LOG_LEVEL: {}\n",
-            std::env::var("AIQIEZI_LOG_LEVEL").unwrap_or_else(|_| "<default>".to_string())
-        ));
-
-        if let Some(config) = &self.config {
-            text.push_str(&format!("Data directory: {}\n", config.data_dir.display()));
-            text.push_str(&format!(
-                "Runtime directory: {}\n",
-                config.runtime_dir.display()
-            ));
-            text.push_str(&format!("Local socket: {}\n", config.socket_path.display()));
-            text.push_str(&format!(
-                "CLI log: {}\n",
-                daemon_process::client_log_path(config).display()
-            ));
-        } else {
-            text.push_str("Client configuration: unavailable\n");
-        }
-
-        if let Some(status) = &self.status {
-            text.push_str(&format!("Daemon version: {}\n", status.version));
-            text.push_str(&format!("Client EndpointId: {}\n", status.client_id));
-            if let Some(server_id) = &status.server_id {
-                text.push_str(&format!("Server EndpointId: {server_id}\n"));
-            }
-        }
-
-        text.push_str("\nRecent requests:\n");
-        if self.debug_entries.is_empty() {
-            text.push_str("  (none)\n");
-        } else {
-            for entry in &self.debug_entries {
-                text.push_str(&format!(
-                    "  {:03}  {:<16} {:>8}  {}\n",
-                    entry.sequence,
-                    entry.command,
-                    format_duration(entry.duration),
-                    entry.outcome
-                ));
-            }
-        }
-        text
-    }
-
     fn draw_dialogs(&mut self, ctx: &egui::Context) -> Option<Command> {
         let mut pending = None;
 
@@ -1366,118 +1223,6 @@ impl App {
             self.about_open = self.about_open && open;
         }
 
-        if self.debug_runtime_open {
-            let mut open = self.debug_runtime_open;
-            let info = self.debug_info_text();
-            egui::Window::new("Debug: Runtime Info")
-                .collapsible(false)
-                .resizable(true)
-                .default_width(760.0)
-                .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
-                .open(&mut open)
-                .show(ctx, |ui| {
-                    ui.horizontal(|ui| {
-                        if ui.button("Copy Debug Info").clicked() {
-                            ui.ctx().copy_text(info.clone());
-                        }
-                    });
-                    egui::ScrollArea::vertical()
-                        .max_height(460.0)
-                        .show(ui, |ui| {
-                            ui.monospace(info);
-                        });
-                });
-            self.debug_runtime_open = self.debug_runtime_open && open;
-        }
-
-        if self.debug_requests_open {
-            let mut open = self.debug_requests_open;
-            let entries: Vec<DebugEntry> = self.debug_entries.iter().cloned().collect();
-            egui::Window::new("Debug: Recent Requests")
-                .collapsible(false)
-                .resizable(true)
-                .default_width(760.0)
-                .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
-                .open(&mut open)
-                .show(ctx, |ui| {
-                    if entries.is_empty() {
-                        ui.label("No requests recorded yet.");
-                    } else {
-                        egui::ScrollArea::vertical()
-                            .max_height(440.0)
-                            .show(ui, |ui| {
-                                egui::Grid::new("debug_requests")
-                                    .num_columns(4)
-                                    .spacing([12.0, 5.0])
-                                    .striped(true)
-                                    .show(ui, |ui| {
-                                        ui.label(RichText::new("#").strong());
-                                        ui.label(RichText::new("Command").strong());
-                                        ui.label(RichText::new("Duration").strong());
-                                        ui.label(RichText::new("Outcome").strong());
-                                        ui.end_row();
-                                        for entry in &entries {
-                                            ui.monospace(format!("{:03}", entry.sequence));
-                                            ui.monospace(&entry.command);
-                                            ui.monospace(format_duration(entry.duration));
-                                            ui.label(&entry.outcome);
-                                            ui.end_row();
-                                        }
-                                    });
-                            });
-                    }
-                });
-            self.debug_requests_open = self.debug_requests_open && open;
-        }
-
-        if self.debug_log_open {
-            let mut open = self.debug_log_open;
-            let log_path = self
-                .config
-                .as_ref()
-                .map(daemon_process::client_log_path)
-                .map(|path| path.display().to_string())
-                .unwrap_or_else(|| "<unknown>".to_string());
-            let log_text = self.cli_log.clone();
-            let log_error = self.cli_log_error.clone();
-            egui::Window::new("Debug: CLI Log")
-                .collapsible(false)
-                .resizable(true)
-                .default_width(860.0)
-                .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
-                .open(&mut open)
-                .show(ctx, |ui| {
-                    ui.label(format!("Log file: {log_path}"));
-                    ui.horizontal(|ui| {
-                        if ui.button("Refresh").clicked() {
-                            pending = Some(Command::ReadCliLog);
-                        }
-                        if ui.button("Copy Log Path").clicked() {
-                            ui.ctx().copy_text(log_path.clone());
-                        }
-                        if let Some(text) = &log_text {
-                            if ui.button("Copy Log").clicked() {
-                                ui.ctx().copy_text(text.clone());
-                            }
-                        }
-                    });
-                    if let Some(error) = &log_error {
-                        ui.label(RichText::new(error).color(theme::ERROR));
-                    }
-                    egui::ScrollArea::vertical()
-                        .max_height(480.0)
-                        .show(ui, |ui| match &log_text {
-                            Some(text) => {
-                                ui.monospace(text);
-                            }
-                            None => {
-                                ui.label("No log contents loaded.");
-                            }
-                        });
-                });
-            self.debug_log_open = self.debug_log_open && open;
-        }
-
         pending
     }
 
@@ -1495,16 +1240,6 @@ impl eframe::App for App {
         let mut pending = None;
         if let Some(action) = self.draw_menu_bar(ui) {
             pending = self.handle_menu_action(action);
-        }
-
-        if self.copy_debug_info {
-            self.copy_debug_info = false;
-            let info = self.debug_info_text();
-            ui.ctx().copy_text(info);
-            self.message = Some(Message {
-                text: "debug info copied".to_string(),
-                error: false,
-            });
         }
 
         if self.connection == ConnectionState::Running {
@@ -1600,14 +1335,6 @@ fn copyable_id(ui: &mut egui::Ui, value: &str, display: &str) {
     });
 }
 
-fn format_duration(duration: Duration) -> String {
-    if duration.as_secs() >= 1 {
-        format!("{:.2}s", duration.as_secs_f64())
-    } else {
-        format!("{}ms", duration.as_millis())
-    }
-}
-
 fn short_id(id: &str) -> String {
     if id.len() > 20 {
         format!("{}…{}", &id[..10], &id[id.len() - 6..])
@@ -1622,16 +1349,4 @@ fn response_error(response: &Response) -> String {
         .as_ref()
         .map(|error| format!("{}: {}", error.code, error.message))
         .unwrap_or_else(|| "unknown local error".to_string())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::format_duration;
-    use std::time::Duration;
-
-    #[test]
-    fn formats_request_durations() {
-        assert_eq!(format_duration(Duration::from_millis(42)), "42ms");
-        assert_eq!(format_duration(Duration::from_millis(1250)), "1.25s");
-    }
 }

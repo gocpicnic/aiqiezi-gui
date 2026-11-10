@@ -58,26 +58,9 @@ fallback.
 **Reconnect** asks the running daemon to refresh its iroh network state after
 sleep or a network change. It does not restart the daemon or the GUI. Read-only
 backend requests also retry once after a timeout.
-- **Help**: About aiqiezi; Debug submenu.
+- **Help**: About aiqiezi.
 
 Login, password change, EndpointId change, server info, and About are dialogs.
-
-## Debug menu
-
-**Help → Debug** provides:
-
-- **Runtime Info…** — CLI path, daemon launch command, data/runtime/socket
-  paths, CLI log path, versions, and current EndpointIds;
-- **Recent Requests…** — the last 100 GUI-to-daemon requests with duration and
-  outcome;
-- **Show CLI Log…** — tail of `<AIQIEZI_DATA_DIR>/client.log`;
-- **Copy Debug Info** — copies the runtime and request information.
-
-The GUI launches the CLI daemon only once. Other actions are JSON over the local
-socket, not separate CLI subprocesses. Recent Request timings are the quickest
-way to distinguish GUI, local-socket, and backend latency.
-
-Passwords and request parameters are never included in the debug log.
 
 ## Startup states
 

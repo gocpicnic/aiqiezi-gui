@@ -60,11 +60,6 @@ After sleep, a network switch, or a temporary outage, use **Server → Reconnect
 or the Reconnect button in the inspector. This refreshes the daemon's iroh
 network state without restarting it.
 
-**Help → Debug** exposes runtime paths and the daemon launch command, the last
-100 local request timings, the CLI log tail, and a copyable debug report. The GUI
-starts the CLI daemon once; other actions use the local socket rather than
-separate CLI subprocesses.
-
 See [docs/interface.md](docs/interface.md) for the full interaction guide.
 
 ## Platform support
