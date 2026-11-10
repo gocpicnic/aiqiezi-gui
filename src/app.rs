@@ -5,6 +5,7 @@
   license that can be found in the LICENSE file.
 */
 
+use std::collections::HashMap;
 use std::time::Duration;
 
 use aiqiezi_client::aiqiezi_proto::{error_codes, Response};
@@ -15,7 +16,7 @@ use tracing::{error, info, warn};
 
 use crate::theme;
 use crate::version;
-use crate::worker::{Command, Event, StatusInfo, WorkerHandle};
+use crate::worker::{Command, Event, RequestId, StatusInfo, WorkerHandle};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum ConnectionState {
@@ -88,7 +89,7 @@ pub struct App {
     status: Option<StatusInfo>,
     setup_required: bool,
     close_requested: bool,
-    busy: bool,
+    pending: HashMap<RequestId, &'static str>,
     message: Option<Message>,
     server_id_input: String,
     server_info: Option<Value>,
@@ -115,98 +116,20 @@ impl App {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         theme::apply(&cc.egui_ctx);
 
-        match ClientConfig::from_env() {
-            Ok(config) => {
-                info!(
-                    version = version::VERSION,
-                    data_dir = %config.data_dir.display(),
-                    runtime_dir = %config.runtime_dir.display(),
-                    config_path = %config.config_path.display(),
-                    server_configured = config.server_id.is_some(),
-                    "starting aiqiezi-gui"
-                );
-                let setup_required = config.server_id.is_none();
-                let worker = WorkerHandle::start(config);
-                if setup_required {
-                    info!("server EndpointId is not configured; showing setup");
-                } else {
-                    info!("starting local client daemon");
-                }
-                if setup_required {
-                    Self {
-                        config_error: None,
-                        worker: Some(worker),
-                        connection: ConnectionState::NeedsServer,
-                        connection_error: None,
-                        status: None,
-                        setup_required: true,
-                        close_requested: false,
-                        busy: false,
-                        message: None,
-                        server_id_input: String::new(),
-                        server_info: None,
-                        nav: NavItem::AllPhotos,
-                        inspector_tab: InspectorTab::Info,
-                        show_sidebar: true,
-                        show_inspector: true,
-                        grid_view: true,
-                        search: String::new(),
-                        login_open: false,
-                        login_password: String::new(),
-                        change_password_open: false,
-                        old_password: String::new(),
-                        new_password: String::new(),
-                        confirm_password: String::new(),
-                        endpoint_open: false,
-                        server_info_open: false,
-                        about_open: false,
-                    }
-                } else {
-                    worker.send(Command::EnsureDaemon { endpoint_id: None });
-                    Self {
-                        config_error: None,
-                        worker: Some(worker),
-                        connection: ConnectionState::Starting,
-                        connection_error: None,
-                        status: None,
-                        setup_required: false,
-                        close_requested: false,
-                        busy: true,
-                        message: None,
-                        server_id_input: String::new(),
-                        server_info: None,
-                        nav: NavItem::AllPhotos,
-                        inspector_tab: InspectorTab::Info,
-                        show_sidebar: true,
-                        show_inspector: true,
-                        grid_view: true,
-                        search: String::new(),
-                        login_open: false,
-                        login_password: String::new(),
-                        change_password_open: false,
-                        old_password: String::new(),
-                        new_password: String::new(),
-                        confirm_password: String::new(),
-                        endpoint_open: false,
-                        server_info_open: false,
-                        about_open: false,
-                    }
-                }
-            }
+        let config = match ClientConfig::from_env() {
+            Ok(config) => config,
             Err(error) => {
-                error!(
-                    error = %format!("{error:#}"),
-                    "failed to load client configuration"
-                );
-                Self {
-                    config_error: Some(format!("{error:#}")),
+                let error = format!("{error:#}");
+                error!(error = %error, "failed to load client configuration");
+                return Self {
+                    config_error: Some(error),
                     worker: None,
                     connection: ConnectionState::Error,
                     connection_error: Some("client configuration failed".to_string()),
                     status: None,
                     setup_required: false,
                     close_requested: false,
-                    busy: false,
+                    pending: HashMap::new(),
                     message: None,
                     server_id_input: String::new(),
                     server_info: None,
@@ -225,9 +148,99 @@ impl App {
                     endpoint_open: false,
                     server_info_open: false,
                     about_open: false,
-                }
+                };
             }
+        };
+
+        info!(
+            version = version::VERSION,
+            data_dir = %config.data_dir.display(),
+            runtime_dir = %config.runtime_dir.display(),
+            config_path = %config.config_path.display(),
+            server_configured = config.server_id.is_some(),
+            "starting aiqiezi-gui"
+        );
+        let setup_required = config.server_id.is_none();
+        let repaint = cc.egui_ctx.clone();
+        let worker = match WorkerHandle::start(config, move || repaint.request_repaint()) {
+            Ok(worker) => worker,
+            Err(error) => {
+                error!(error = %error, "failed to start GUI worker");
+                return Self {
+                    config_error: None,
+                    worker: None,
+                    connection: ConnectionState::Error,
+                    connection_error: Some(error.clone()),
+                    status: None,
+                    setup_required,
+                    close_requested: false,
+                    pending: HashMap::new(),
+                    message: Some(Message {
+                        text: error,
+                        error: true,
+                    }),
+                    server_id_input: String::new(),
+                    server_info: None,
+                    nav: NavItem::AllPhotos,
+                    inspector_tab: InspectorTab::Info,
+                    show_sidebar: true,
+                    show_inspector: true,
+                    grid_view: true,
+                    search: String::new(),
+                    login_open: false,
+                    login_password: String::new(),
+                    change_password_open: false,
+                    old_password: String::new(),
+                    new_password: String::new(),
+                    confirm_password: String::new(),
+                    endpoint_open: false,
+                    server_info_open: false,
+                    about_open: false,
+                };
+            }
+        };
+
+        let mut app = Self {
+            config_error: None,
+            worker: Some(worker),
+            connection: if setup_required {
+                ConnectionState::NeedsServer
+            } else {
+                ConnectionState::Starting
+            },
+            connection_error: None,
+            status: None,
+            setup_required,
+            close_requested: false,
+            pending: HashMap::new(),
+            message: None,
+            server_id_input: String::new(),
+            server_info: None,
+            nav: NavItem::AllPhotos,
+            inspector_tab: InspectorTab::Info,
+            show_sidebar: true,
+            show_inspector: true,
+            grid_view: true,
+            search: String::new(),
+            login_open: false,
+            login_password: String::new(),
+            change_password_open: false,
+            old_password: String::new(),
+            new_password: String::new(),
+            confirm_password: String::new(),
+            endpoint_open: false,
+            server_info_open: false,
+            about_open: false,
+        };
+
+        if setup_required {
+            info!("server EndpointId is not configured; showing setup");
+        } else {
+            info!("starting local client daemon");
+            let _ = app.send(Command::EnsureDaemon { endpoint_id: None });
         }
+
+        app
     }
 
     fn poll_events(&mut self) {
@@ -237,10 +250,16 @@ impl App {
 
         let events: Vec<Event> = std::iter::from_fn(|| worker.try_recv()).collect();
         for event in events {
+            if let Some(id) = event.request_id() {
+                if self.pending.remove(&id).is_none() {
+                    warn!(request_id = %id, "worker returned an unknown request");
+                }
+            }
+
             match event {
                 Event::Fatal(error) => {
                     error!(error = %error, "GUI worker failed");
-                    self.busy = false;
+                    self.pending.clear();
                     self.connection = ConnectionState::Error;
                     self.connection_error = Some(error.clone());
                     self.message = Some(Message {
@@ -248,8 +267,7 @@ impl App {
                         error: true,
                     });
                 }
-                Event::EnsureDaemon(result) => {
-                    self.busy = false;
+                Event::EnsureDaemon { result, .. } => {
                     let was_setup = self.setup_required;
                     match result {
                         Ok(status) => {
@@ -278,40 +296,35 @@ impl App {
                         }
                     }
                 }
-                Event::Status(result) => {
-                    self.busy = false;
-                    match result {
-                        Ok(status) => self.apply_status(status),
-                        Err(error) => {
-                            warn!(error = %error, "local client daemon status failed");
-                            self.message = Some(Message {
-                                text: error.clone(),
-                                error: true,
-                            });
-                            if self.setup_required {
-                                self.connection = ConnectionState::NeedsServer;
-                            } else {
-                                self.connection = ConnectionState::Error;
-                                self.connection_error = Some(error);
-                            }
+                Event::Status { result, .. } => match result {
+                    Ok(status) => self.apply_status(status),
+                    Err(error) => {
+                        warn!(error = %error, "local client daemon status failed");
+                        self.message = Some(Message {
+                            text: error.clone(),
+                            error: true,
+                        });
+                        if self.setup_required {
+                            self.connection = ConnectionState::NeedsServer;
+                        } else {
+                            self.connection = ConnectionState::Error;
+                            self.connection_error = Some(error);
                         }
                     }
-                }
-                Event::DaemonStopped(result) => {
-                    self.busy = false;
-                    match result {
-                        Ok(()) => self.close_requested = true,
-                        Err(error) => {
-                            warn!(error = %error, "could not stop client daemon");
-                            self.message = Some(Message {
-                                text: format!("could not stop client daemon: {error}"),
-                                error: true,
-                            });
-                        }
+                },
+                Event::DaemonStopped { result, .. } => match result {
+                    Ok(()) => self.close_requested = true,
+                    Err(error) => {
+                        warn!(error = %error, "could not stop client daemon");
+                        self.message = Some(Message {
+                            text: format!("could not stop client daemon: {error}"),
+                            error: true,
+                        });
                     }
-                }
-                Event::Response { label, response } => {
-                    self.busy = false;
+                },
+                Event::Response {
+                    label, response, ..
+                } => {
                     self.handle_response(&label, response);
                 }
             }
@@ -410,15 +423,37 @@ impl App {
         }
     }
 
-    fn send(&mut self, command: Command) {
-        if let Some(worker) = &self.worker {
-            worker.send(command);
-            self.busy = true;
-        }
+    fn send(&mut self, command: Command) -> Option<RequestId> {
+        let label = command.label();
+        let Some(worker) = self.worker.as_mut() else {
+            self.report_worker_failure(label);
+            return None;
+        };
+        let Some(id) = worker.submit(command) else {
+            self.report_worker_failure(label);
+            return None;
+        };
+        self.pending.insert(id, label);
+        Some(id)
+    }
+
+    fn report_worker_failure(&mut self, label: &str) {
+        error!(command = label, "GUI worker is not running");
+        self.pending.clear();
+        self.connection = ConnectionState::Error;
+        self.connection_error = Some("GUI worker is not running".to_string());
+        self.message = Some(Message {
+            text: "GUI worker is not running".to_string(),
+            error: true,
+        });
+    }
+
+    fn is_busy(&self) -> bool {
+        !self.pending.is_empty()
     }
 
     fn refresh_status(&mut self) {
-        self.send(Command::Status);
+        let _ = self.send(Command::Status);
     }
 
     fn handle_menu_action(&mut self, action: MenuAction) -> Option<Command> {
@@ -568,7 +603,7 @@ impl App {
                         }
                         ui.separator();
                         if ui
-                            .add_enabled(!self.busy, egui::Button::new("Reconnect"))
+                            .add_enabled(!self.is_busy(), egui::Button::new("Reconnect"))
                             .clicked()
                         {
                             action = Some(MenuAction::Reconnect);
@@ -939,7 +974,7 @@ impl App {
                         ui.add_space(8.0);
                         if ui
                             .add_enabled(
-                                !self.busy && !self.server_id_input.trim().is_empty(),
+                                !self.is_busy() && !self.server_id_input.trim().is_empty(),
                                 egui::Button::new("Save and start client"),
                             )
                             .clicked()
@@ -1009,7 +1044,7 @@ impl App {
                 ui.add_space(10.0);
                 if ui
                     .add_enabled(
-                        self.worker.is_some() && !self.busy,
+                        self.worker.is_some() && !self.is_busy(),
                         egui::Button::new("Retry"),
                     )
                     .clicked()
@@ -1051,7 +1086,7 @@ impl App {
                     ui.horizontal(|ui| {
                         if ui
                             .add_enabled(
-                                !self.busy && !self.login_password.is_empty(),
+                                !self.is_busy() && !self.login_password.is_empty(),
                                 egui::Button::new("Login"),
                             )
                             .clicked()
@@ -1113,7 +1148,7 @@ impl App {
                     ui.horizontal(|ui| {
                         if ui
                             .add_enabled(
-                                !self.busy
+                                !self.is_busy()
                                     && !self.old_password.is_empty()
                                     && !self.new_password.is_empty()
                                     && !self.confirm_password.is_empty(),
@@ -1190,7 +1225,7 @@ impl App {
                     ui.add_space(8.0);
                     if ui
                         .add_enabled(
-                            !self.busy && !self.server_id_input.trim().is_empty(),
+                            !self.is_busy() && !self.server_id_input.trim().is_empty(),
                             egui::Button::new("Save"),
                         )
                         .clicked()
@@ -1333,13 +1368,13 @@ impl eframe::App for App {
         }
 
         if let Some(command) = pending {
-            self.send(command);
+            let _ = self.send(command);
         }
 
         if self.close_requested {
             ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
         }
-        if self.busy {
+        if self.is_busy() {
             ui.ctx().request_repaint_after(Duration::from_millis(100));
         }
     }

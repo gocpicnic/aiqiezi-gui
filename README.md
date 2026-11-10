@@ -137,6 +137,22 @@ The GUI uses the shared `aiqiezi-client` library from the CLI repository. It
 does not access PostgreSQL or the server filesystem directly, and it does not
 create a second iroh endpoint.
 
+### GUI worker
+
+The GUI never performs local-socket or network work on the egui thread. A
+long-lived control worker thread owns a Tokio runtime and forwards commands to
+the client daemon.
+
+- Every submitted command receives a monotonic request id.
+- Every result event carries that id back to the GUI.
+- The worker calls `egui::Context::request_repaint()` after queuing an event, so
+  results do not depend on polling.
+- The GUI tracks pending request ids instead of a single global busy flag.
+- Password-bearing commands redact their debug output and are never logged.
+
+Control commands remain serialized. Future library-metadata and transfer work
+must use separate worker lanes rather than sharing the control queue.
+
 ## Branding assets
 
 Branding files live in `assets/`:
