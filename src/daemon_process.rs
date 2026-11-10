@@ -11,6 +11,7 @@ use std::process::{Child, Command, Stdio};
 
 use aiqiezi_client::config::create_private_dir;
 use aiqiezi_client::ClientConfig;
+use tracing::info;
 
 pub struct SpawnedDaemon {
     pub child: Child,
@@ -51,6 +52,15 @@ pub fn spawn_daemon(
             .map_err(|error| format!("set permissions on {}: {error}", log_path.display()))?;
     }
 
+    info!(
+        cli = %cli.display(),
+        endpoint_supplied = endpoint_id.is_some(),
+        data_dir = %config.data_dir.display(),
+        runtime_dir = %config.runtime_dir.display(),
+        log = %log_path.display(),
+        "spawning local client daemon"
+    );
+
     let mut command = Command::new(&cli);
     command.arg("start");
     if let Some(endpoint_id) = endpoint_id {
@@ -73,6 +83,7 @@ pub fn spawn_daemon(
     let child = command
         .spawn()
         .map_err(|error| format!("start {}: {error}", cli.display()))?;
+    info!(pid = child.id(), "local client daemon started");
 
     Ok(SpawnedDaemon { child, log_path })
 }

@@ -11,6 +11,7 @@ use aiqiezi_client::aiqiezi_proto::{error_codes, Response};
 use aiqiezi_client::{ClientConfig, EndpointId};
 use eframe::egui::{self, RichText};
 use serde_json::Value;
+use tracing::{error, info, warn};
 
 use crate::theme;
 use crate::version;
@@ -116,8 +117,21 @@ impl App {
 
         match ClientConfig::from_env() {
             Ok(config) => {
+                info!(
+                    version = version::VERSION,
+                    data_dir = %config.data_dir.display(),
+                    runtime_dir = %config.runtime_dir.display(),
+                    config_path = %config.config_path.display(),
+                    server_configured = config.server_id.is_some(),
+                    "starting aiqiezi-gui"
+                );
                 let setup_required = config.server_id.is_none();
                 let worker = WorkerHandle::start(config);
+                if setup_required {
+                    info!("server EndpointId is not configured; showing setup");
+                } else {
+                    info!("starting local client daemon");
+                }
                 if setup_required {
                     Self {
                         config_error: None,
@@ -179,34 +193,40 @@ impl App {
                     }
                 }
             }
-            Err(error) => Self {
-                config_error: Some(format!("{error:#}")),
-                worker: None,
-                connection: ConnectionState::Error,
-                connection_error: Some("client configuration failed".to_string()),
-                status: None,
-                setup_required: false,
-                close_requested: false,
-                busy: false,
-                message: None,
-                server_id_input: String::new(),
-                server_info: None,
-                nav: NavItem::AllPhotos,
-                inspector_tab: InspectorTab::Info,
-                show_sidebar: true,
-                show_inspector: true,
-                grid_view: true,
-                search: String::new(),
-                login_open: false,
-                login_password: String::new(),
-                change_password_open: false,
-                old_password: String::new(),
-                new_password: String::new(),
-                confirm_password: String::new(),
-                endpoint_open: false,
-                server_info_open: false,
-                about_open: false,
-            },
+            Err(error) => {
+                error!(
+                    error = %format!("{error:#}"),
+                    "failed to load client configuration"
+                );
+                Self {
+                    config_error: Some(format!("{error:#}")),
+                    worker: None,
+                    connection: ConnectionState::Error,
+                    connection_error: Some("client configuration failed".to_string()),
+                    status: None,
+                    setup_required: false,
+                    close_requested: false,
+                    busy: false,
+                    message: None,
+                    server_id_input: String::new(),
+                    server_info: None,
+                    nav: NavItem::AllPhotos,
+                    inspector_tab: InspectorTab::Info,
+                    show_sidebar: true,
+                    show_inspector: true,
+                    grid_view: true,
+                    search: String::new(),
+                    login_open: false,
+                    login_password: String::new(),
+                    change_password_open: false,
+                    old_password: String::new(),
+                    new_password: String::new(),
+                    confirm_password: String::new(),
+                    endpoint_open: false,
+                    server_info_open: false,
+                    about_open: false,
+                }
+            }
         }
     }
 
@@ -219,6 +239,7 @@ impl App {
         for event in events {
             match event {
                 Event::Fatal(error) => {
+                    error!(error = %error, "GUI worker failed");
                     self.busy = false;
                     self.connection = ConnectionState::Error;
                     self.connection_error = Some(error.clone());
@@ -232,12 +253,18 @@ impl App {
                     let was_setup = self.setup_required;
                     match result {
                         Ok(status) => {
+                            info!(
+                                version = %status.version,
+                                server_configured = status.server_id.is_some(),
+                                "local client daemon ready"
+                            );
                             self.apply_status(status);
                             if was_setup && !self.setup_required {
                                 self.login_open = true;
                             }
                         }
                         Err(error) => {
+                            error!(error = %error, "failed to start or reconnect client daemon");
                             self.message = Some(Message {
                                 text: error.clone(),
                                 error: true,
@@ -256,6 +283,7 @@ impl App {
                     match result {
                         Ok(status) => self.apply_status(status),
                         Err(error) => {
+                            warn!(error = %error, "local client daemon status failed");
                             self.message = Some(Message {
                                 text: error.clone(),
                                 error: true,
@@ -274,6 +302,7 @@ impl App {
                     match result {
                         Ok(()) => self.close_requested = true,
                         Err(error) => {
+                            warn!(error = %error, "could not stop client daemon");
                             self.message = Some(Message {
                                 text: format!("could not stop client daemon: {error}"),
                                 error: true,
@@ -307,6 +336,11 @@ impl App {
 
     fn handle_response(&mut self, label: &str, response: Response) {
         if !response.ok {
+            warn!(
+                command = label,
+                error = %response_error(&response),
+                "local command failed"
+            );
             if label == "login"
                 && response
                     .error
@@ -419,6 +453,7 @@ impl App {
                 self.endpoint_open = true;
             }
             MenuAction::Reconnect => {
+                info!("network reconnect requested");
                 return Some(Command::Reconnect);
             }
             MenuAction::About => self.about_open = true,

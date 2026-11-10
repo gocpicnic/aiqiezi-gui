@@ -206,6 +206,30 @@ from different directories will not connect them to the same daemon.
 Closing the window exits only the GUI and leaves the daemon running. Use
 **File → Exit and stop client** to stop the daemon as well.
 
+## Logging
+
+When the GUI is started from a terminal, lifecycle logs are written to stderr
+with timestamps, targets, and thread names:
+
+```bash
+cargo run
+```
+
+The default level is `info` for `aiqiezi_gui` and `aiqiezi_client`, with
+`eframe` at `info` and `winit`/`iroh` at `warn`. Override it with:
+
+```bash
+AIQIEZI_LOG_LEVEL=debug cargo run
+```
+
+or use `RUST_LOG` when `AIQIEZI_LOG_LEVEL` is unset:
+
+```bash
+RUST_LOG=aiqiezi_gui=debug,iroh=info cargo run
+```
+
+The CLI daemon log remains at `<AIQIEZI_DATA_DIR>/client.log`.
+
 ## Development
 
 ```bash

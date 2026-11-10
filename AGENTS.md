@@ -137,6 +137,16 @@ aiqiezi-gui/
   monospace text. No custom font is bundled at this phase.
 - `tracing` for structured logs.
 
+## Logging rules
+
+- Write lifecycle logs to stderr so terminal launches show them.
+- Log GUI startup, daemon spawn, daemon readiness, reconnects, and failures.
+- Do not log passwords, request parameters, secret keys, or tickets.
+- `AIQIEZI_LOG_LEVEL` overrides `RUST_LOG`; otherwise use
+  `aiqiezi_gui=info,aiqiezi_client=info,eframe=info,winit=warn,iroh=warn`.
+- Keep the CLI daemon log at `<AIQIEZI_DATA_DIR>/client.log`.
+- Do not add a GUI debug window or per-command timing UI.
+
 ## UI rules
 
 - Follow the LightCraft-style workspace: menu bar, toolbar, left library sidebar,
