@@ -39,7 +39,9 @@ Long public identifiers are clipboard-friendly:
 
 `Paste` trims whitespace and rejects content that is not a valid EndpointId.
 Native `Ctrl+V` / `Cmd+V` and `Ctrl+C` / `Cmd+C` continue to work in text
-fields. Password fields are never copied by the application.
+fields. These shortcuts use eframe’s explicit `clipboard` feature, which also
+enables `RequestPaste` and native clipboard integration. Password fields are
+never copied by the application.
 
 On Linux Wayland, clipboard access depends on the compositor supporting a
 data-control protocol. If `Paste` reports an error, use native `Ctrl+V` as the

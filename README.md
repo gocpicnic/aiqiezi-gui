@@ -166,6 +166,10 @@ JSON views use the monospace family; headings, labels, buttons, and forms use
 the proportional family. See [docs/branding.md](docs/branding.md) for the asset
 and font policy.
 
+Eframe’s `clipboard`, `default_fonts`, `links`, `accesskit`, `wayland`, `wgpu`,
+and `x11` features are enabled explicitly. Native keyboard copy/paste and
+`RequestPaste` depend on the `clipboard` feature.
+
 ## Running
 
 Run the GUI from source:

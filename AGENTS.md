@@ -123,6 +123,9 @@ aiqiezi-gui/
 
 - Rust 2021.
 - `eframe` / `egui` 0.37 with the `wgpu` backend for the desktop UI.
+- Keep eframe features explicit: `accesskit`, `clipboard`, `default_fonts`,
+  `links`, `wayland`, `wgpu`, and `x11`. Native keyboard copy/paste and
+  `RequestPaste` depend on the `clipboard` feature.
 - `wgpu` for video frame presentation when playback is added.
 - `cpal` for audio output when playback is added.
 - Tokio runtime in a background thread.
