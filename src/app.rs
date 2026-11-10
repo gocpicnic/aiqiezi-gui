@@ -583,7 +583,7 @@ impl App {
                         }
                     });
                     ui.menu_button("Help", |ui| {
-                        if ui.button("About aiqiezi").clicked() {
+                        if ui.button("About aiqiezi-gui").clicked() {
                             action = Some(MenuAction::About);
                             ui.close();
                         }
@@ -1243,13 +1243,13 @@ impl App {
 
         if self.about_open {
             let mut open = self.about_open;
-            egui::Window::new("About aiqiezi")
+            egui::Window::new("About aiqiezi-gui")
                 .collapsible(false)
                 .resizable(false)
                 .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
                 .open(&mut open)
                 .show(ctx, |ui| {
-                    ui.heading("aiqiezi");
+                    ui.heading("aiqiezi-gui");
                     ui.label("Self-hosted photo and video archive.");
                     ui.label(format!("Version {}", version::VERSION));
                     ui.label("AGPL-3.0");
