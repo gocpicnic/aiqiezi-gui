@@ -27,6 +27,21 @@ fn main() -> eframe::Result {
         ..Default::default()
     };
 
+    #[cfg(target_os = "linux")]
+    let options = {
+        let mut options = options;
+        if std::env::var_os("DISPLAY").is_some() && std::env::var_os("AIQIEZI_WAYLAND").is_none() {
+            tracing::info!("using X11/XWayland event loop");
+            options.event_loop_builder = Some(Box::new(|builder| {
+                use winit::platform::x11::EventLoopBuilderExtX11;
+                builder.with_x11();
+            }));
+        } else {
+            tracing::info!("using native Wayland event loop");
+        }
+        options
+    };
+
     eframe::run_native(
         "aiqiezi-gui",
         options,

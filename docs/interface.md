@@ -28,6 +28,8 @@ status bar
   and GUI version.
 - There is no startup splash and no logo or wordmark in the workspace. The app
   icon is used only by the operating system.
+- On Linux, X11/XWayland is used by default when `DISPLAY` is available. Set
+  `AIQIEZI_WAYLAND=1` to force native Wayland.
 
 ## Clipboard
 

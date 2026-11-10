@@ -71,7 +71,8 @@ signing, or notarization yet; source builds remain supported.
 Build prerequisites:
 
 - Linux: X11/Wayland and graphics development libraries required by
-  `eframe`/`wgpu`;
+  `eframe`/`wgpu`. When `DISPLAY` is available, the GUI uses X11/XWayland by
+  default, matching LightCraft. Set `AIQIEZI_WAYLAND=1` to force native Wayland.
 - macOS: Xcode command-line tools;
 - Windows: the MSVC Rust toolchain, Visual Studio C++ build tools, and the
   Windows SDK resource compiler used to embed the application icon.

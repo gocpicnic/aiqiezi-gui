@@ -57,6 +57,8 @@ Rules:
 - document any new native dependency and its per-OS build requirement;
 - Windows builds use the Windows SDK resource compiler through `winresource`
   to embed `assets/aiqiezi.ico`;
+- on Linux, prefer X11/XWayland when `DISPLAY` is available, matching
+  LightCraft; allow native Wayland with `AIQIEZI_WAYLAND=1`;
 - add ARM64 only after it is explicitly added to the support matrix.
 
 ## Release rules
